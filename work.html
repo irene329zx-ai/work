@@ -1,0 +1,1893 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>员工工时管理系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.0/build/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background-color: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #3498db, #2c3e50);
+            color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+        
+        .tab-container {
+            display: flex;
+            margin-bottom: 20px;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            background: #f8f9fa;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .tab.active {
+            background: #3498db;
+            color: white;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+        
+        @media (max-width: 900px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        .card h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        input[type="text"], select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: border 0.3s;
+        }
+        
+        input[type="text"]:focus, select:focus {
+            border-color: #3498db;
+            outline: none;
+        }
+        
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: background-color 0.3s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        button:hover {
+            background-color: #2980b9;
+        }
+        
+        button.secondary {
+            background-color: #2ecc71;
+        }
+        
+        button.secondary:hover {
+            background-color: #27ae60;
+        }
+        
+        button.danger {
+            background-color: #e74c3c;
+        }
+        
+        button.danger:hover {
+            background-color: #c0392b;
+        }
+        
+        .qr-container {
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px dashed #ddd;
+            border-radius: 5px;
+            min-height: 200px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #qrcode {
+            margin-top: 15px;
+        }
+        
+        .camera-container {
+            position: relative;
+            margin-top: 20px;
+            overflow: hidden;
+            border-radius: 5px;
+        }
+        
+        #video {
+            width: 100%;
+            background-color: #000;
+        }
+        
+        #canvas {
+            display: none;
+        }
+        
+        .employee-list {
+            margin-top: 20px;
+        }
+        
+        .employee-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .employee-item:last-child {
+            border-bottom: none;
+        }
+        
+        .employee-info {
+            flex-grow: 1;
+        }
+        
+        .employee-name {
+            font-weight: 600;
+            font-size: 18px;
+        }
+        
+        .employee-id {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+        
+        .employee-status {
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .status-working {
+            background-color: #e8f6f3;
+            color: #27ae60;
+        }
+        
+        .status-idle {
+            background-color: #fef9e7;
+            color: #f39c12;
+        }
+        
+        .work-time {
+            font-size: 14px;
+            color: #2c3e50;
+            margin-top: 5px;
+        }
+        
+        .logs-container {
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .log-item {
+            padding: 10px 15px;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+        
+        .log-time {
+            color: #7f8c8d;
+            font-size: 12px;
+        }
+        
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            border-radius: 5px;
+            color: white;
+            font-weight: 600;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .notification.success {
+            background-color: #2ecc71;
+        }
+        
+        .notification.error {
+            background-color: #e74c3c;
+        }
+        
+        .notification.show {
+            opacity: 1;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .total-hours {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .employee-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .delete-btn {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .delete-btn:hover {
+            background-color: #c0392b;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 30px;
+            color: #7f8c8d;
+        }
+        
+        .scan-result {
+            margin-top: 15px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            text-align: center;
+        }
+        
+        .scan-result h3 {
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+        
+        .data-management {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        
+        .data-management h3 {
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+        
+        .stats-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #3498db;
+            margin: 10px 0;
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            color: #7f8c8d;
+        }
+        
+        .work-history {
+            margin-top: 20px;
+        }
+        
+        .history-item {
+            padding: 10px 15px;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+        
+        .history-date {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .history-time {
+            color: #7f8c8d;
+            font-size: 12px;
+        }
+        
+        .history-duration {
+            float: right;
+            font-weight: 600;
+            color: #3498db;
+        }
+        
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            resize: vertical;
+            min-height: 100px;
+            margin-bottom: 10px;
+        }
+
+        .sync-status {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-online {
+            background-color: #2ecc71;
+        }
+        
+        .status-offline {
+            background-color: #e74c3c;
+        }
+
+        .time-info {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 3px;
+        }
+        
+        .permission-steps {
+            margin: 15px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .permission-steps h3 {
+            color: #2c3e50;
+            margin: 10px 0 5px 0;
+        }
+
+        .permission-steps p {
+            margin: 2px 0;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>员工工时管理系统 <span id="syncStatusIndicator" class="sync-status status-offline"></span></h1>
+            <p class="subtitle">员工信息录入 · 二维码考勤 · 工时记录 · 云端同步</p>
+        </header>
+        
+        <div class="tab-container">
+            <div class="tab active" data-tab="employee-tab">员工录入</div>
+            <div class="tab" data-tab="admin-tab">后台管理</div>
+            <div class="tab" data-tab="data-tab">数据管理</div>
+        </div>
+        
+        <!-- 员工录入页面 -->
+        <div id="employee-tab" class="tab-content active">
+            <div class="card">
+                <h2>员工信息录入</h2>
+                <div class="form-group">
+                    <label for="employeeName">员工姓名</label>
+                    <input type="text" id="employeeName" placeholder="请输入员工姓名(2-20个字符)">
+                </div>
+                <div class="form-group">
+                    <label for="employeeId">员工工号</label>
+                    <input type="text" id="employeeId" placeholder="请输入员工工号(字母和数字)">
+                </div>
+                <div class="action-buttons">
+                    <button id="generateQR">生成二维码</button>
+                    <button id="clearForm" class="danger">清空表单</button>
+                </div>
+                
+                <div class="qr-container">
+                    <p id="qrPlaceholder">生成的二维码将显示在这里</p>
+                    <canvas id="qrcode"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 后台管理页面 -->
+        <div id="admin-tab" class="tab-content">
+            <div class="main-content">
+                <div class="left-column">
+                    <div class="card">
+                        <h2>员工列表</h2>
+                        <div class="stats-container">
+                            <div class="stat-card">
+                                <div class="stat-label">员工总数</div>
+                                <div class="stat-value" id="totalEmployees">0</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">工作中</div>
+                                <div class="stat-value" id="workingEmployees">0</div>
+                            </div>
+                        </div>
+                        <div class="employee-list" id="employeeList">
+                            <!-- 员工列表将通过JavaScript动态生成 -->
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h2>今日工时排行</h2>
+                        <div class="work-history" id="workRanking">
+                            <!-- 工时排行将通过JavaScript动态生成 -->
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="right-column">
+                    <div class="card" id="permissionGuide" style="display: none;">
+                        <h2>摄像头权限设置指南</h2>
+                        <div class="permission-steps">
+                            <h3>iOS Safari:</h3>
+                            <p>1. 点击地址栏左边的"🔒"图标</p>
+                            <p>2. 选择"网站设置"</p>
+                            <p>3. 允许"摄像头"权限</p>
+                            
+                            <h3>Android Chrome:</h3>
+                            <p>1. 点击右上角"..."菜单</p>
+                            <p>2. 选择"网站设置"</p>
+                            <p>3. 允许"摄像头"权限</p>
+                            
+                            <h3>通用方法:</h3>
+                            <p>1. 刷新页面</p>
+                            <p>2. 当出现权限弹窗时选择"允许"</p>
+                        </div>
+                        <button onclick="hidePermissionGuide()">我知道了</button>
+                    </div>
+                    
+                    <div class="card">
+                        <h2>扫码考勤</h2>
+                        <div class="action-buttons">
+                            <button id="startCamera">开启摄像头</button>
+                            <button id="stopCamera" class="danger">关闭摄像头</button>
+                        </div>
+                        
+                        <div class="camera-container">
+                            <video id="video" autoplay playsinline></video>
+                            <canvas id="canvas"></canvas>
+                        </div>
+                        
+                        <div class="scan-result" id="scanResult">
+                            <h3>扫描结果</h3>
+                            <p id="scanResultText">等待扫描...</p>
+                        </div>
+                        
+                        <div class="logs-container" id="scanLogs">
+                            <!-- 扫描日志将通过JavaScript动态生成 -->
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h2>工时管理</h2>
+                        <div class="form-group">
+                            <label for="selectedEmployee">选择员工</label>
+                            <select id="selectedEmployee" style="width: 100%; padding: 12px; border-radius: 5px; border: 1px solid #ddd; font-size: 16px;">
+                                <option value="">-- 请选择员工 --</option>
+                            </select>
+                        </div>
+                        
+                        <div class="action-buttons">
+                            <button id="startWork" class="secondary">开始工作</button>
+                            <button id="pauseWork">暂停工作</button>
+                            <button id="saveWork">保存工时</button>
+                        </div>
+                        
+                        <div class="total-hours">
+                            今日总工时: <span id="totalHours">0</span> 小时
+                        </div>
+                        
+                        <div class="work-history" id="workHistory">
+                            <!-- 工作历史记录将通过JavaScript动态生成 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 数据管理页面 -->
+        <div id="data-tab" class="tab-content">
+            <div class="main-content">
+                <div class="left-column">
+                    <div class="card">
+                        <h2>数据备份</h2>
+                        <div class="data-management">
+                            <p>将系统数据导出为JSON文件，可用于备份或迁移数据。</p>
+                            <div class="action-buttons">
+                                <button id="exportData" class="secondary">导出数据</button>
+                                <button id="syncToCloud" class="secondary">同步到云端</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h2>数据恢复</h2>
+                        <div class="data-management">
+                            <p>从JSON文件导入数据，恢复系统状态。</p>
+                            <div class="form-group">
+                                <label for="importData">导入数据 (JSON格式)</label>
+                                <textarea id="importData" placeholder="请粘贴JSON数据..."></textarea>
+                            </div>
+                            <div class="action-buttons">
+                                <button id="importDataBtn">导入数据</button>
+                                <button id="syncFromCloud">从云端同步</button>
+                                <button id="clearAllData" class="danger">清空所有数据</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="right-column">
+                    <div class="card">
+                        <h2>系统统计</h2>
+                        <div class="stats-container">
+                            <div class="stat-card">
+                                <div class="stat-label">总员工数</div>
+                                <div class="stat-value" id="statTotalEmployees">0</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">总工时</div>
+                                <div class="stat-value" id="statTotalHours">0</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">今日工时</div>
+                                <div class="stat-value" id="statTodayHours">0</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">活跃员工</div>
+                                <div class="stat-value" id="statActiveEmployees">0</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h2>操作日志</h2>
+                        <div class="logs-container" id="systemLogs">
+                            <!-- 系统日志将通过JavaScript动态生成 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="notification" id="notification"></div>
+
+    <script>
+        // Supabase云同步类
+        class CloudSync {
+            constructor() {
+                // 使用你提供的Supabase配置
+                this.supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
+                this.supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
+                this.supabase = supabase.createClient(this.supabaseUrl, this.supabaseKey);
+                this.isOnline = false;
+            }
+
+            // 检查网络状态
+            async checkConnection() {
+                try {
+                    const { error } = await this.supabase.from('employees').select('count').limit(1);
+                    this.isOnline = !error;
+                    this.updateStatusIndicator();
+                    return this.isOnline;
+                } catch (error) {
+                    this.isOnline = false;
+                    this.updateStatusIndicator();
+                    console.warn('网络连接失败，使用本地模式');
+                    return false;
+                }
+            }
+
+            // 更新状态指示器
+            updateStatusIndicator() {
+                const indicator = document.getElementById('syncStatusIndicator');
+                if (indicator) {
+                    indicator.className = `sync-status ${this.isOnline ? 'status-online' : 'status-offline'}`;
+                    indicator.title = this.isOnline ? '云端连接正常' : '云端连接断开';
+                }
+            }
+
+            // 同步所有数据
+            async syncAllData() {
+                if (!(await this.checkConnection())) {
+                    showNotification('云端连接失败，使用本地数据', 'error');
+                    return false;
+                }
+
+                try {
+                    // 从云端下载员工数据
+                    const { data: employees, error: empError } = await this.supabase
+                        .from('employees')
+                        .select('*');
+                    
+                    if (!empError && employees && employees.length > 0) {
+                        localStorage.setItem('employees', JSON.stringify(employees));
+                    }
+
+                    // 从云端下载工时记录
+                    const { data: records, error: recError } = await this.supabase
+                        .from('work_records')
+                        .select('*');
+                    
+                    if (!recError && records && records.length > 0) {
+                        const workRecords = {};
+                        records.forEach(record => {
+                            workRecords[record.employee_id] = {
+                                totalHours: record.total_hours || 0,
+                                isWorking: record.is_working || false,
+                                startTime: record.start_time ? new Date(record.start_time).getTime() : null,
+                                history: record.history || []
+                            };
+                        });
+                        localStorage.setItem('workRecords', JSON.stringify(workRecords));
+                    }
+
+                    showNotification('数据同步完成', 'success');
+                    return true;
+                } catch (error) {
+                    console.error('同步失败:', error);
+                    showNotification('同步失败，使用本地数据', 'error');
+                    return false;
+                }
+            }
+
+            // 上传员工数据
+            async uploadEmployees() {
+                if (!this.isOnline) return false;
+
+                try {
+                    const employees = JSON.parse(localStorage.getItem('employees')) || [];
+                    
+                    if (employees.length > 0) {
+                        const { error } = await this.supabase
+                            .from('employees')
+                            .upsert(employees, { onConflict: 'id' });
+                        
+                        if (error) throw error;
+                    }
+                    return true;
+                } catch (error) {
+                    console.error('上传员工数据失败:', error);
+                    return false;
+                }
+            }
+
+            // 上传工时记录
+            async uploadWorkRecords() {
+                if (!this.isOnline) return false;
+
+                try {
+                    const workRecords = JSON.parse(localStorage.getItem('workRecords')) || {};
+                    const records = [];
+
+                    for (const [employeeId, record] of Object.entries(workRecords)) {
+                        records.push({
+                            employee_id: employeeId,
+                            total_hours: parseFloat(record.totalHours || 0),
+                            is_working: record.isWorking || false,
+                            start_time: record.startTime ? new Date(record.startTime).toISOString() : null,
+                            history: record.history || [],
+                            last_updated: new Date().toISOString()
+                        });
+                    }
+
+                    if (records.length > 0) {
+                        const { error } = await this.supabase
+                            .from('work_records')
+                            .upsert(records, { onConflict: 'employee_id' });
+                        
+                        if (error) throw error;
+                    }
+                    return true;
+                } catch (error) {
+                    console.error('上传工时记录失败:', error);
+                    return false;
+                }
+            }
+
+            // 上传所有数据
+            async uploadAllData() {
+                if (!(await this.checkConnection())) {
+                    showNotification('云端连接失败，数据保存在本地', 'error');
+                    return false;
+                }
+
+                try {
+                    await this.uploadEmployees();
+                    await this.uploadWorkRecords();
+                    console.log('所有数据已上传到云端');
+                    showNotification('数据已同步到云端', 'success');
+                    return true;
+                } catch (error) {
+                    console.error('上传数据失败:', error);
+                    showNotification('上传到云端失败', 'error');
+                    return false;
+                }
+            }
+
+            // 删除员工（云端）
+            async deleteEmployee(employeeId) {
+                if (!this.isOnline) return false;
+
+                try {
+                    // 先删除工时记录
+                    const { error: recError } = await this.supabase
+                        .from('work_records')
+                        .delete()
+                        .eq('employee_id', employeeId);
+                    
+                    if (recError) throw recError;
+
+                    // 再删除员工
+                    const { error: empError } = await this.supabase
+                        .from('employees')
+                        .delete()
+                        .eq('id', employeeId);
+                    
+                    if (empError) throw empError;
+
+                    return true;
+                } catch (error) {
+                    console.error('删除员工失败:', error);
+                    return false;
+                }
+            }
+        }
+
+        // 创建全局云同步实例
+        const cloudSync = new CloudSync();
+
+        // 全局变量
+        let employees = JSON.parse(localStorage.getItem('employees')) || [];
+        let workRecords = JSON.parse(localStorage.getItem('workRecords')) || {};
+        let systemLogs = JSON.parse(localStorage.getItem('systemLogs')) || [];
+        let videoStream = null;
+        let currentEmployeeId = null;
+        let isScanning = false;
+        
+        // DOM元素
+        const employeeNameInput = document.getElementById('employeeName');
+        const employeeIdInput = document.getElementById('employeeId');
+        const generateQRBtn = document.getElementById('generateQR');
+        const clearFormBtn = document.getElementById('clearForm');
+        const qrCodeContainer = document.getElementById('qrcode');
+        const qrPlaceholder = document.getElementById('qrPlaceholder');
+        const employeeList = document.getElementById('employeeList');
+        const startCameraBtn = document.getElementById('startCamera');
+        const stopCameraBtn = document.getElementById('stopCamera');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const scanLogs = document.getElementById('scanLogs');
+        const selectedEmployeeSelect = document.getElementById('selectedEmployee');
+        const startWorkBtn = document.getElementById('startWork');
+        const pauseWorkBtn = document.getElementById('pauseWork');
+        const saveWorkBtn = document.getElementById('saveWork');
+        const totalHoursSpan = document.getElementById('totalHours');
+        const notification = document.getElementById('notification');
+        const scanResultText = document.getElementById('scanResultText');
+        const tabs = document.querySelectorAll('.tab');
+        const tabContents = document.querySelectorAll('.tab-content');
+        const exportDataBtn = document.getElementById('exportData');
+        const importDataBtn = document.getElementById('importDataBtn');
+        const importDataTextarea = document.getElementById('importData');
+        const clearAllDataBtn = document.getElementById('clearAllData');
+        const totalEmployeesSpan = document.getElementById('totalEmployees');
+        const workingEmployeesSpan = document.getElementById('workingEmployees');
+        const workRankingList = document.getElementById('workRanking');
+        const workHistoryList = document.getElementById('workHistory');
+        const systemLogsList = document.getElementById('systemLogs');
+        const statTotalEmployees = document.getElementById('statTotalEmployees');
+        const statTotalHours = document.getElementById('statTotalHours');
+        const statTodayHours = document.getElementById('statTodayHours');
+        const statActiveEmployees = document.getElementById('statActiveEmployees');
+        const syncToCloudBtn = document.getElementById('syncToCloud');
+        const syncFromCloudBtn = document.getElementById('syncFromCloud');
+        
+        // 时间格式化函数
+        function formatDateTime(timestamp) {
+            if (!timestamp) return '未开始';
+            const date = new Date(timestamp);
+            return date.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+        }
+
+        function formatTime(timestamp) {
+            if (!timestamp) return '';
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString('zh-CN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+        }
+
+        function formatDate(timestamp) {
+            if (!timestamp) return '';
+            const date = new Date(timestamp);
+            return date.toLocaleDateString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            });
+        }
+
+        // 权限引导函数
+        function showPermissionGuide() {
+            document.getElementById('permissionGuide').style.display = 'block';
+        }
+
+        function hidePermissionGuide() {
+            document.getElementById('permissionGuide').style.display = 'none';
+        }
+
+        // 摄像头按钮重置
+        function resetCameraButton() {
+            startCameraBtn.disabled = false;
+            startCameraBtn.textContent = '开启摄像头';
+        }
+
+        // 开启摄像头（优化版）
+        function startCamera() {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                // 显示加载状态
+                startCameraBtn.disabled = true;
+                startCameraBtn.textContent = '开启中...';
+                
+                // 多种摄像头配置尝试
+                const constraintsList = [
+                    {
+                        video: {
+                            facingMode: { exact: "environment" }, // 强制后置
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        }
+                    },
+                    {
+                        video: {
+                            facingMode: "environment", // 优先后置
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        }
+                    },
+                    {
+                        video: {
+                            facingMode: "user", // 前置摄像头
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        }
+                    },
+                    {
+                        video: true // 默认配置
+                    }
+                ];
+                
+                const tryConstraints = async (index) => {
+                    if (index >= constraintsList.length) {
+                        showNotification('无法访问任何摄像头', 'error');
+                        resetCameraButton();
+                        return;
+                    }
+                    
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia(constraintsList[index]);
+                        onCameraSuccess(stream);
+                    } catch (error) {
+                        console.log(`摄像头配置 ${index} 失败:`, error);
+                        if (index === constraintsList.length - 1) {
+                            onCameraError(error);
+                        } else {
+                            tryConstraints(index + 1);
+                        }
+                    }
+                };
+                
+                tryConstraints(0);
+                
+            } else {
+                showNotification('您的浏览器不支持摄像头功能', 'error');
+                resetCameraButton();
+            }
+        }
+
+        function onCameraSuccess(stream) {
+            videoStream = stream;
+            video.srcObject = stream;
+            
+            video.onloadedmetadata = function() {
+                video.play();
+                isScanning = true;
+                scanQRCode();
+                showNotification('摄像头已开启', 'success');
+                addSystemLog('开启摄像头扫描');
+                resetCameraButton();
+            };
+            
+            video.onerror = function() {
+                showNotification('视频播放错误', 'error');
+                resetCameraButton();
+            };
+        }
+
+        function onCameraError(error) {
+            console.error('摄像头访问错误:', error);
+            
+            let errorMessage = '无法访问摄像头';
+            switch(error.name) {
+                case 'NotAllowedError':
+                    errorMessage = '摄像头权限被拒绝';
+                    showPermissionGuide();
+                    break;
+                case 'NotFoundError':
+                    errorMessage = '未找到摄像头设备';
+                    break;
+                case 'NotSupportedError':
+                    errorMessage = '浏览器不支持摄像头功能';
+                    break;
+                case 'NotReadableError':
+                    errorMessage = '摄像头被其他应用占用';
+                    break;
+                default:
+                    errorMessage = `摄像头错误: ${error.message}`;
+            }
+            
+            showNotification(errorMessage, 'error');
+            resetCameraButton();
+        }
+        
+        // 关闭摄像头
+        function stopCamera() {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+                video.srcObject = null;
+                isScanning = false;
+                
+                showNotification('摄像头已关闭', 'success');
+                addSystemLog('关闭摄像头');
+            }
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', async function() {
+            // 初始化云同步
+            await cloudSync.checkConnection();
+            
+            // 尝试从云端加载数据
+            await cloudSync.syncAllData();
+            
+            // 重新加载本地数据（可能已被云端数据更新）
+            employees = JSON.parse(localStorage.getItem('employees')) || [];
+            workRecords = JSON.parse(localStorage.getItem('workRecords')) || {};
+            
+            renderEmployeeList();
+            updateEmployeeSelect();
+            updateTotalHours();
+            updateStats();
+            renderSystemLogs();
+            
+            // 生成二维码按钮事件
+            generateQRBtn.addEventListener('click', generateQRCode);
+            
+            // 清空表单按钮事件
+            clearFormBtn.addEventListener('click', clearForm);
+            
+            // 摄像头控制按钮事件
+            startCameraBtn.addEventListener('click', startCamera);
+            stopCameraBtn.addEventListener('click', stopCamera);
+            
+            // 工时管理按钮事件
+            startWorkBtn.addEventListener('click', startWork);
+            pauseWorkBtn.addEventListener('click', pauseWork);
+            saveWorkBtn.addEventListener('click', saveWork);
+            
+            // 员工选择变化事件
+            selectedEmployeeSelect.addEventListener('change', function() {
+                currentEmployeeId = this.value;
+                if (currentEmployeeId) {
+                    renderWorkHistory(currentEmployeeId);
+                } else {
+                    workHistoryList.innerHTML = '<div class="empty-state">请选择员工查看工作记录</div>';
+                }
+            });
+            
+            // 数据管理按钮事件
+            exportDataBtn.addEventListener('click', exportData);
+            importDataBtn.addEventListener('click', importData);
+            clearAllDataBtn.addEventListener('click', clearAllData);
+            syncToCloudBtn.addEventListener('click', () => cloudSync.uploadAllData());
+            syncFromCloudBtn.addEventListener('click', async () => {
+                await cloudSync.syncAllData();
+                // 重新加载数据并更新UI
+                employees = JSON.parse(localStorage.getItem('employees')) || [];
+                workRecords = JSON.parse(localStorage.getItem('workRecords')) || {};
+                renderEmployeeList();
+                updateEmployeeSelect();
+                updateTotalHours();
+                updateStats();
+            });
+            
+            // 标签页切换事件
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    const tabId = tab.getAttribute('data-tab');
+                    
+                    // 更新标签页状态
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tabContents.forEach(tc => tc.classList.remove('active'));
+                    
+                    tab.classList.add('active');
+                    document.getElementById(tabId).classList.add('active');
+                    
+                    // 如果切换到员工录入页面，停止摄像头
+                    if (tabId === 'employee-tab' && videoStream) {
+                        stopCamera();
+                    }
+                    
+                    // 更新统计信息
+                    if (tabId === 'data-tab') {
+                        updateStats();
+                    }
+                });
+            });
+            
+            // 定时更新工作时间
+            setInterval(() => {
+                renderEmployeeList();
+                updateTotalHours();
+            }, 1000);
+            
+            // 定时同步到云端（每2分钟）
+            setInterval(async () => {
+                await cloudSync.uploadAllData();
+            }, 120000);
+            
+            // 添加系统日志
+            addSystemLog('系统初始化完成');
+        });
+        
+        // 生成二维码
+        function generateQRCode() {
+            const name = employeeNameInput.value.trim();
+            const id = employeeIdInput.value.trim();
+            
+            // 输入验证
+            const validationError = validateEmployeeInput(name, id);
+            if (validationError) {
+                showNotification(validationError, 'error');
+                return;
+            }
+            
+            // 检查员工是否已存在
+            if (employees.some(emp => emp.id === id)) {
+                showNotification('该工号已存在', 'error');
+                return;
+            }
+            
+            // 添加员工到列表
+            employees.push({ name, id });
+            localStorage.setItem('employees', JSON.stringify(employees));
+            
+            // 生成二维码
+            qrPlaceholder.style.display = 'none';
+            
+            QRCode.toCanvas(document.getElementById('qrcode'), id, {
+                width: 200,
+                margin: 1,
+                color: {
+                    dark: '#000000',
+                    light: '#FFFFFF'
+                }
+            }, function(error) {
+                if (error) {
+                    console.error(error);
+                    showNotification('生成二维码失败', 'error');
+                } else {
+                    showNotification('员工信息已保存，二维码已生成', 'success');
+                    renderEmployeeList();
+                    updateEmployeeSelect();
+                    updateStats();
+                    addSystemLog(`添加员工: ${name} (${id})`);
+                    
+                    // 同步到云端
+                    cloudSync.uploadAllData();
+                }
+            });
+        }
+        
+        // 输入验证
+        function validateEmployeeInput(name, id) {
+            if (!name || !id) {
+                return '请输入员工姓名和工号';
+            }
+            
+            if (name.length < 2 || name.length > 20) {
+                return '姓名长度应在2-20字符之间';
+            }
+            
+            if (!/^[A-Za-z0-9]{3,10}$/.test(id)) {
+                return '工号只能包含字母和数字，长度3-10位';
+            }
+            
+            return null;
+        }
+        
+        // 清空表单
+        function clearForm() {
+            employeeNameInput.value = '';
+            employeeIdInput.value = '';
+            qrCodeContainer.innerHTML = '';
+            qrPlaceholder.style.display = 'block';
+            showNotification('表单已清空', 'success');
+        }
+        
+        // 渲染员工列表
+        function renderEmployeeList() {
+            employeeList.innerHTML = '';
+            
+            if (employees.length === 0) {
+                employeeList.innerHTML = '<div class="empty-state">暂无员工信息</div>';
+                totalEmployeesSpan.textContent = '0';
+                workingEmployeesSpan.textContent = '0';
+                return;
+            }
+            
+            // 更新统计
+            totalEmployeesSpan.textContent = employees.length;
+            const workingCount = employees.filter(emp => 
+                workRecords[emp.id] && workRecords[emp.id].isWorking
+            ).length;
+            workingEmployeesSpan.textContent = workingCount;
+            
+            employees.forEach(employee => {
+                const employeeItem = document.createElement('div');
+                employeeItem.className = 'employee-item';
+                
+                const isWorking = workRecords[employee.id] && workRecords[employee.id].isWorking;
+                const statusClass = isWorking ? 'status-working' : 'status-idle';
+                const statusText = isWorking ? '工作中' : '未工作';
+                const startTime = workRecords[employee.id] ? workRecords[employee.id].startTime : null;
+                
+                employeeItem.innerHTML = `
+                    <div class="employee-info">
+                        <div class="employee-name">${employee.name}</div>
+                        <div class="employee-id">工号: ${employee.id}</div>
+                        <div class="work-time">今日工时: ${calculateWorkTime(employee.id)} 小时</div>
+                        ${startTime ? `<div class="time-info">开始时间: ${formatDateTime(startTime)}</div>` : ''}
+                    </div>
+                    <div class="employee-actions">
+                        <div class="employee-status ${statusClass}">${statusText}</div>
+                        <button class="delete-btn" data-id="${employee.id}">删除</button>
+                    </div>
+                `;
+                
+                employeeList.appendChild(employeeItem);
+            });
+            
+            // 更新工时排行
+            updateWorkRanking();
+            
+            // 添加删除按钮事件
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const employeeId = this.getAttribute('data-id');
+                    deleteEmployee(employeeId);
+                });
+            });
+        }
+        
+        // 更新工时排行
+        function updateWorkRanking() {
+            workRankingList.innerHTML = '';
+            
+            if (employees.length === 0) {
+                workRankingList.innerHTML = '<div class="empty-state">暂无数据</div>';
+                return;
+            }
+            
+            // 计算每个员工的工时并排序
+            const rankedEmployees = employees.map(emp => {
+                return {
+                    ...emp,
+                    workTime: parseFloat(calculateWorkTime(emp.id))
+                };
+            }).sort((a, b) => b.workTime - a.workTime);
+            
+            rankedEmployees.forEach((emp, index) => {
+                const rankItem = document.createElement('div');
+                rankItem.className = 'history-item';
+                
+                rankItem.innerHTML = `
+                    <div class="history-date">${index + 1}. ${emp.name}</div>
+                    <div class="history-duration">${emp.workTime.toFixed(2)} 小时</div>
+                `;
+                
+                workRankingList.appendChild(rankItem);
+            });
+        }
+        
+        // 删除员工
+        function deleteEmployee(employeeId) {
+            if (confirm('确定要删除该员工吗？此操作不可恢复。')) {
+                const employee = employees.find(emp => emp.id === employeeId);
+                
+                // 从员工列表中移除
+                employees = employees.filter(emp => emp.id !== employeeId);
+                localStorage.setItem('employees', JSON.stringify(employees));
+                
+                // 从工时记录中移除
+                if (workRecords[employeeId]) {
+                    delete workRecords[employeeId];
+                    localStorage.setItem('workRecords', JSON.stringify(workRecords));
+                }
+                
+                // 如果当前选择的员工被删除，清空选择
+                if (currentEmployeeId === employeeId) {
+                    currentEmployeeId = null;
+                    selectedEmployeeSelect.value = '';
+                }
+                
+                // 更新UI
+                renderEmployeeList();
+                updateEmployeeSelect();
+                updateTotalHours();
+                updateStats();
+                
+                showNotification('员工已删除', 'success');
+                addSystemLog(`删除员工: ${employee.name} (${employeeId})`);
+                
+                // 从云端删除
+                cloudSync.deleteEmployee(employeeId);
+            }
+        }
+        
+        // 计算员工工时
+        function calculateWorkTime(employeeId) {
+            if (!workRecords[employeeId]) return 0;
+            
+            const record = workRecords[employeeId];
+            let totalHours = parseFloat(record.totalHours || 0);
+            
+            // 如果正在工作，加上当前工作时间
+            if (record.isWorking && record.startTime) {
+                const currentWorkTime = (Date.now() - record.startTime) / (1000 * 60 * 60);
+                totalHours += currentWorkTime;
+            }
+            
+            // 保留2位小数
+            return totalHours.toFixed(2);
+        }
+        
+        // 更新员工选择下拉框
+        function updateEmployeeSelect() {
+            selectedEmployeeSelect.innerHTML = '<option value="">-- 请选择员工 --</option>';
+            
+            employees.forEach(employee => {
+                const option = document.createElement('option');
+                option.value = employee.id;
+                option.textContent = `${employee.name} (${employee.id})`;
+                selectedEmployeeSelect.appendChild(option);
+            });
+        }
+        
+        // 扫描二维码
+        function scanQRCode() {
+            if (!isScanning) return;
+            
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                const canvasContext = canvas.getContext('2d');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                canvasContext.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                const imageData = canvasContext.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height);
+                
+                if (code) {
+                    const employeeId = code.data;
+                    const employee = employees.find(emp => emp.id === employeeId);
+                    
+                    if (employee) {
+                        // 更新扫描结果
+                        scanResultText.textContent = `已识别: ${employee.name} (${employeeId})`;
+                        scanResultText.style.color = '#27ae60';
+                        
+                        // 记录扫描日志
+                        const now = new Date();
+                        const timeString = now.toLocaleTimeString();
+                        
+                        const logItem = document.createElement('div');
+                        logItem.className = 'log-item';
+                        logItem.innerHTML = `
+                            <div>${employee.name} (${employeeId})</div>
+                            <div class="log-time">${timeString}</div>
+                        `;
+                        
+                        scanLogs.insertBefore(logItem, scanLogs.firstChild);
+                        
+                        // 限制日志数量
+                        if (scanLogs.children.length > 10) {
+                            scanLogs.removeChild(scanLogs.lastChild);
+                        }
+                        
+                        // 自动选择该员工
+                        selectedEmployeeSelect.value = employeeId;
+                        currentEmployeeId = employeeId;
+                        
+                        // 智能切换工作状态：如果正在工作就暂停，如果未工作就开始
+                        toggleWorkStatus(employeeId);
+                        
+                        // 添加系统日志
+                        addSystemLog(`扫码识别员工: ${employee.name} (${employeeId})`);
+                        
+                        // 暂停扫描2秒，避免重复扫描
+                        isScanning = false;
+                        setTimeout(() => {
+                            isScanning = true;
+                            scanQRCode();
+                        }, 2000);
+                        
+                        return; // 退出当前扫描循环
+                    } else {
+                        scanResultText.textContent = '未找到匹配的员工信息';
+                        scanResultText.style.color = '#e74c3c';
+                    }
+                } else {
+                    scanResultText.textContent = '等待扫描...';
+                    scanResultText.style.color = '#7f8c8d';
+                }
+            }
+            
+            // 继续扫描
+            if (isScanning) {
+                requestAnimationFrame(scanQRCode);
+            }
+        }
+        
+        // 智能切换工作状态
+        function toggleWorkStatus(employeeId) {
+            // 初始化员工记录
+            if (!workRecords[employeeId]) {
+                workRecords[employeeId] = {
+                    totalHours: 0,
+                    isWorking: false,
+                    startTime: null,
+                    history: []
+                };
+            }
+            
+            const record = workRecords[employeeId];
+            const employee = employees.find(emp => emp.id === employeeId);
+            
+            if (record.isWorking) {
+                // 如果正在工作，则暂停工作
+                const workTimeHours = (Date.now() - record.startTime) / (1000 * 60 * 60);
+                record.totalHours = parseFloat(record.totalHours || 0) + workTimeHours;
+                record.isWorking = false;
+                record.startTime = null;
+                
+                showNotification(`${employee.name} 工作已暂停`, 'success');
+                addWorkHistory(employeeId, `扫码暂停工作 - 本次工作时长: ${workTimeHours.toFixed(2)}小时`);
+                addSystemLog(`员工 ${employee.name} 通过扫码暂停工作`);
+            } else {
+                // 如果未工作，则开始工作
+                record.isWorking = true;
+                record.startTime = Date.now();
+                
+                showNotification(`${employee.name} 工作计时已开始`, 'success');
+                addWorkHistory(employeeId, `扫码开始工作 - ${formatDateTime(Date.now())}`);
+                addSystemLog(`员工 ${employee.name} 通过扫码开始工作`);
+            }
+            
+            // 保存到本地存储
+            localStorage.setItem('workRecords', JSON.stringify(workRecords));
+            
+            // 更新UI
+            renderEmployeeList();
+            updateTotalHours();
+            renderWorkHistory(employeeId);
+            
+            // 同步到云端
+            cloudSync.uploadAllData();
+        }
+        
+        // 开始工作
+        function startWork() {
+            const employeeId = selectedEmployeeSelect.value;
+            
+            if (!employeeId) {
+                showNotification('请先选择员工', 'error');
+                return;
+            }
+            
+            // 初始化员工记录
+            if (!workRecords[employeeId]) {
+                workRecords[employeeId] = {
+                    totalHours: 0,
+                    isWorking: false,
+                    startTime: null,
+                    history: []
+                };
+            }
+            
+            const record = workRecords[employeeId];
+            
+            if (record.isWorking) {
+                showNotification('该员工已在工作中', 'error');
+                return;
+            }
+            
+            // 开始计时
+            record.isWorking = true;
+            record.startTime = Date.now();
+            
+            // 保存到本地存储
+            localStorage.setItem('workRecords', JSON.stringify(workRecords));
+            
+            // 更新UI
+            renderEmployeeList();
+            showNotification('工作计时已开始', 'success');
+            
+            // 添加工作历史记录
+            const employee = employees.find(emp => emp.id === employeeId);
+            addWorkHistory(employeeId, `手动开始工作 - ${formatDateTime(Date.now())}`);
+            
+            // 添加系统日志
+            addSystemLog(`员工 ${employee.name} 手动开始工作`);
+            
+            // 更新工作历史显示
+            renderWorkHistory(employeeId);
+            
+            // 同步到云端
+            cloudSync.uploadAllData();
+        }
+        
+        // 暂停工作
+        function pauseWork() {
+            const employeeId = selectedEmployeeSelect.value;
+            
+            if (!employeeId) {
+                showNotification('请先选择员工', 'error');
+                return;
+            }
+            
+            if (!workRecords[employeeId]) {
+                showNotification('该员工没有工作记录', 'error');
+                return;
+            }
+            
+            const record = workRecords[employeeId];
+            
+            if (!record.isWorking) {
+                showNotification('该员工未在工作', 'error');
+                return;
+            }
+            
+            // 计算工作时间并暂停
+            const workTimeHours = (Date.now() - record.startTime) / (1000 * 60 * 60);
+            record.totalHours = parseFloat(record.totalHours || 0) + workTimeHours;
+            record.isWorking = false;
+            record.startTime = null;
+            
+            // 保存到本地存储
+            localStorage.setItem('workRecords', JSON.stringify(workRecords));
+            
+            // 更新UI
+            renderEmployeeList();
+            updateTotalHours();
+            showNotification('工作已暂停', 'success');
+            
+            // 添加工作历史记录
+            const employee = employees.find(emp => emp.id === employeeId);
+            addWorkHistory(employeeId, `手动暂停工作 - 本次工作时长: ${workTimeHours.toFixed(2)}小时`);
+            
+            // 添加系统日志
+            addSystemLog(`员工 ${employee.name} 手动暂停工作`);
+            
+            // 更新工作历史显示
+            renderWorkHistory(employeeId);
+            
+            // 同步到云端
+            cloudSync.uploadAllData();
+        }
+        
+        // 保存工时
+        function saveWork() {
+            const employeeId = selectedEmployeeSelect.value;
+            
+            if (!employeeId) {
+                showNotification('请先选择员工', 'error');
+                return;
+            }
+            
+            if (!workRecords[employeeId]) {
+                showNotification('该员工没有可保存的工时记录', 'error');
+                return;
+            }
+            
+            // 确保先暂停计时
+            if (workRecords[employeeId].isWorking) {
+                pauseWork();
+            }
+            
+            // 保存到localStorage
+            localStorage.setItem('workRecords', JSON.stringify(workRecords));
+            
+            // 更新UI
+            updateTotalHours();
+            showNotification('工时记录已保存', 'success');
+            
+            // 添加系统日志
+            const employee = employees.find(emp => emp.id === employeeId);
+            addSystemLog(`保存员工 ${employee.name} 的工时记录`);
+            
+            // 同步到云端
+            cloudSync.uploadAllData();
+        }
+        
+        // 添加工作历史记录
+        function addWorkHistory(employeeId, action) {
+            if (!workRecords[employeeId].history) {
+                workRecords[employeeId].history = [];
+            }
+            
+            workRecords[employeeId].history.push({
+                action,
+                timestamp: new Date().toISOString()
+            });
+            
+            // 更新工作历史显示
+            renderWorkHistory(employeeId);
+        }
+        
+        // 渲染工作历史
+        function renderWorkHistory(employeeId) {
+            workHistoryList.innerHTML = '';
+            
+            if (!workRecords[employeeId] || !workRecords[employeeId].history || workRecords[employeeId].history.length === 0) {
+                workHistoryList.innerHTML = '<div class="empty-state">暂无工作记录</div>';
+                return;
+            }
+            
+            const history = workRecords[employeeId].history.slice(-5); // 只显示最近5条记录
+            
+            history.forEach(item => {
+                const historyItem = document.createElement('div');
+                historyItem.className = 'history-item';
+                
+                const date = new Date(item.timestamp);
+                const timeString = formatDateTime(date.getTime());
+                
+                historyItem.innerHTML = `
+                    <div class="history-date">${item.action}</div>
+                    <div class="history-time">${timeString}</div>
+                `;
+                
+                workHistoryList.appendChild(historyItem);
+            });
+        }
+        
+        // 更新总工时显示
+        function updateTotalHours() {
+            let total = 0;
+            
+            for (const employeeId in workRecords) {
+                total += parseFloat(calculateWorkTime(employeeId));
+            }
+            
+            totalHoursSpan.textContent = total.toFixed(2);
+        }
+        
+        // 更新统计信息
+        function updateStats() {
+            // 员工统计
+            statTotalEmployees.textContent = employees.length;
+            
+            // 工时统计
+            let totalHours = 0;
+            let todayHours = 0;
+            let activeEmployees = 0;
+            
+            const today = new Date().toDateString();
+            
+            for (const employeeId in workRecords) {
+                totalHours += parseFloat(calculateWorkTime(employeeId));
+                
+                if (workRecords[employeeId].isWorking) {
+                    activeEmployees++;
+                }
+            }
+            
+            statTotalHours.textContent = totalHours.toFixed(2);
+            statTodayHours.textContent = totalHours.toFixed(2); // 简化处理，实际应按日期统计
+            statActiveEmployees.textContent = activeEmployees;
+        }
+        
+        // 导出数据
+        function exportData() {
+            const data = {
+                employees: employees,
+                workRecords: workRecords,
+                exportDate: new Date().toISOString()
+            };
+            
+            const dataStr = JSON.stringify(data, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `employee_work_data_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            
+            showNotification('数据导出成功', 'success');
+            addSystemLog('导出系统数据');
+        }
+        
+        // 导入数据
+        function importData() {
+            const dataStr = importDataTextarea.value.trim();
+            
+            if (!dataStr) {
+                showNotification('请输入要导入的数据', 'error');
+                return;
+            }
+            
+            try {
+                const data = JSON.parse(dataStr);
+                
+                if (!data.employees || !data.workRecords) {
+                    showNotification('数据格式不正确', 'error');
+                    return;
+                }
+                
+                // 确认操作
+                if (!confirm('导入数据将覆盖当前所有数据，确定要继续吗？')) {
+                    return;
+                }
+                
+                // 更新数据
+                employees = data.employees;
+                workRecords = data.workRecords;
+                
+                // 保存到localStorage
+                localStorage.setItem('employees', JSON.stringify(employees));
+                localStorage.setItem('workRecords', JSON.stringify(workRecords));
+                
+                // 更新UI
+                renderEmployeeList();
+                updateEmployeeSelect();
+                updateTotalHours();
+                updateStats();
+                
+                showNotification('数据导入成功', 'success');
+                addSystemLog('导入系统数据');
+                
+                // 同步到云端
+                cloudSync.uploadAllData();
+                
+                // 清空输入框
+                importDataTextarea.value = '';
+            } catch (error) {
+                console.error('导入数据错误:', error);
+                showNotification('数据格式不正确，导入失败', 'error');
+            }
+        }
+        
+        // 清空所有数据
+        function clearAllData() {
+            if (!confirm('确定要清空所有数据吗？此操作不可恢复！')) {
+                return;
+            }
+            
+            // 清空所有数据
+            employees = [];
+            workRecords = {};
+            systemLogs = [];
+            
+            // 清空localStorage
+            localStorage.removeItem('employees');
+            localStorage.removeItem('workRecords');
+            localStorage.removeItem('systemLogs');
+            
+            // 更新UI
+            renderEmployeeList();
+            updateEmployeeSelect();
+            updateTotalHours();
+            updateStats();
+            renderSystemLogs();
+            
+            showNotification('所有数据已清空', 'success');
+            addSystemLog('清空所有系统数据');
+            
+            // 从云端删除所有数据
+            cloudSync.uploadAllData(); // 这会用空数据覆盖云端
+        }
+        
+        // 添加系统日志
+        function addSystemLog(message) {
+            const log = {
+                message,
+                timestamp: new Date().toISOString()
+            };
+            
+            systemLogs.unshift(log);
+            
+            // 限制日志数量
+            if (systemLogs.length > 50) {
+                systemLogs.pop();
+            }
+            
+            // 保存到localStorage
+            localStorage.setItem('systemLogs', JSON.stringify(systemLogs));
+            
+            // 更新UI
+            renderSystemLogs();
+        }
+        
+        // 渲染系统日志
+        function renderSystemLogs() {
+            systemLogsList.innerHTML = '';
+            
+            if (systemLogs.length === 0) {
+                systemLogsList.innerHTML = '<div class="empty-state">暂无系统日志</div>';
+                return;
+            }
+            
+            systemLogs.forEach(log => {
+                const logItem = document.createElement('div');
+                logItem.className = 'log-item';
+                
+                const date = new Date(log.timestamp);
+                const timeString = formatDateTime(date.getTime());
+                
+                logItem.innerHTML = `
+                    <div>${log.message}</div>
+                    <div class="log-time">${timeString}</div>
+                `;
+                
+                systemLogsList.appendChild(logItem);
+            });
+        }
+        
+        // 显示通知
+        function showNotification(message, type) {
+            notification.textContent = message;
+            notification.className = `notification ${type} show`;
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
