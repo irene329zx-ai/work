@@ -396,7 +396,7 @@
             margin-top: 3px;
         }
         
-        /* 新增：微信扫码记录样式 */
+        /* 微信扫码记录样式 */
         .wechat-scan-item {
             padding: 8px 12px;
             border-bottom: 1px solid #eee;
@@ -413,24 +413,6 @@
 
         .recent-activity {
             margin-top: 15px;
-        }
-        
-        /* 新增：员工二维码显示样式 */
-        .employee-qr-section {
-            margin-top: 20px;
-            text-align: center;
-            padding: 15px;
-            border-top: 1px solid #eee;
-        }
-        
-        .employee-qr-title {
-            font-weight: 600;
-            margin-bottom: 10px;
-            color: #2c3e50;
-        }
-        
-        .employee-qr-code {
-            margin: 10px auto;
         }
         
         .work-time-details {
@@ -542,13 +524,6 @@
                         
                         <div class="total-hours">
                             今日总工时: <span id="totalHours">0</span> 小时
-                        </div>
-                        
-                        <!-- 新增：员工二维码显示区域 -->
-                        <div class="employee-qr-section" id="employeeQrSection" style="display: none;">
-                            <div class="employee-qr-title">员工二维码</div>
-                            <div id="employeeQrCode" class="employee-qr-code"></div>
-                            <div id="employeeQrInfo" class="employee-info"></div>
                         </div>
                         
                         <div class="work-history" id="workHistory">
@@ -841,9 +816,6 @@
         const syncToCloudBtn = document.getElementById('syncToCloud');
         const syncFromCloudBtn = document.getElementById('syncFromCloud');
         const wechatScansList = document.getElementById('wechatScansList');
-        const employeeQrSection = document.getElementById('employeeQrSection');
-        const employeeQrCode = document.getElementById('employeeQrCode');
-        const employeeQrInfo = document.getElementById('employeeQrInfo');
         
         // 时间格式化函数
         function formatDateTime(timestamp) {
@@ -930,10 +902,8 @@
                 currentEmployeeId = this.value;
                 if (currentEmployeeId) {
                     renderWorkHistory(currentEmployeeId);
-                    renderEmployeeQrCode(currentEmployeeId);
                 } else {
                     workHistoryList.innerHTML = '<div class="empty-state">请选择员工查看工作记录</div>';
-                    employeeQrSection.style.display = 'none';
                 }
             });
             
@@ -1214,7 +1184,6 @@
                 if (currentEmployeeId === employeeId) {
                     currentEmployeeId = null;
                     selectedEmployeeSelect.value = '';
-                    employeeQrSection.style.display = 'none';
                 }
                 
                 // 更新UI
@@ -1426,42 +1395,6 @@
                 
                 workHistoryList.appendChild(historyItem);
             });
-        }
-        
-        // 渲染员工二维码
-        function renderEmployeeQrCode(employeeId) {
-            const employee = employees.find(emp => emp.id === employeeId);
-            if (!employee) return;
-            
-            // 显示二维码区域
-            employeeQrSection.style.display = 'block';
-            
-            // 清空之前的二维码
-            employeeQrCode.innerHTML = '';
-            
-            // 生成微信可扫描的二维码URL
-            const successPageUrl = `https://irene329zx-ai.github.io/work/scan-success.html?id=${encodeURIComponent(employeeId)}&name=${encodeURIComponent(employee.name)}`;
-            
-            // 生成二维码
-            QRCode.toCanvas(employeeQrCode, successPageUrl, {
-                width: 150,
-                margin: 1,
-                color: {
-                    dark: '#000000',
-                    light: '#FFFFFF'
-                }
-            }, function(error) {
-                if (error) {
-                    console.error('生成员工二维码失败:', error);
-                    employeeQrCode.innerHTML = '<p style="color: #e74c3c;">生成二维码失败</p>';
-                }
-            });
-            
-            // 更新员工信息
-            employeeQrInfo.innerHTML = `
-                <div><strong>${employee.name}</strong> (${employeeId})</div>
-                <div style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">微信扫码考勤</div>
-            `;
         }
         
         // 更新总工时显示
