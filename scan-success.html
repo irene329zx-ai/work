@@ -3,383 +3,290 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>扫码成功</title>
+    <title>扫码考勤</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
         body {
             font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            margin: 0;
+            padding: 20px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
         }
-        
-        .success-card {
+        .card {
             background: white;
-            border-radius: 20px;
-            padding: 40px 30px;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
             text-align: center;
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
             max-width: 400px;
             width: 100%;
         }
-        
-        .success-icon {
-            width: 80px;
-            height: 80px;
-            background: #4CAF50;
-            border-radius: 50%;
-            margin: 0 auto 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 40px;
-            color: white;
+        .icon {
+            font-size: 60px;
+            margin-bottom: 20px;
         }
-        
-        .error-icon {
-            background: #e74c3c;
-        }
-        
-        h1 {
-            color: #333;
-            margin-bottom: 15px;
-            font-size: 24px;
-        }
-        
-        .employee-info {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 10px;
-            margin: 20px 0;
-        }
-        
-        .employee-name {
-            font-size: 20px;
-            font-weight: bold;
-            color: #2c3e50;
-            margin-bottom: 5px;
-        }
-        
-        .employee-id {
-            color: #7f8c8d;
-            font-size: 16px;
-        }
-        
-        .scan-time {
-            color: #95a5a6;
-            font-size: 14px;
-            margin-top: 10px;
-        }
-        
-        .auto-close {
-            color: #bdc3c7;
-            font-size: 12px;
-            margin-top: 20px;
-        }
-        
-        .loading {
-            display: none;
-        }
-        
-        .loading .spinner {
-            width: 30px;
-            height: 30px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #3498db;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .debug-info {
-            background: #f8f9fa;
-            border: 1px solid #e9ecef;
-            border-radius: 5px;
-            padding: 10px;
+        .success { color: #4CAF50; }
+        .error { color: #e74c3c; }
+        .loading { color: #3498db; }
+        h1 { color: #333; margin-bottom: 15px; }
+        .info { background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; }
+        .debug { 
+            background: #fff3cd; 
+            border: 1px solid #ffeaa7; 
+            padding: 10px; 
+            border-radius: 5px; 
             margin-top: 15px;
             font-size: 12px;
             text-align: left;
-            color: #6c757d;
             display: none;
         }
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .retry-btn { background: #e74c3c; }
     </style>
 </head>
 <body>
-    <div class="success-card">
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <p>正在记录考勤...</p>
+    <div class="card">
+        <!-- 加载状态 -->
+        <div id="loadingState">
+            <div class="icon loading">⏳</div>
+            <h1>处理中...</h1>
+            <p>正在记录考勤信息</p>
+            <div class="debug" id="loadingDebug"></div>
         </div>
-        
-        <div id="successContent" style="display: none;">
-            <div class="success-icon">✓</div>
+
+        <!-- 成功状态 -->
+        <div id="successState" style="display: none;">
+            <div class="icon success">✅</div>
             <h1>考勤成功</h1>
-            <div class="employee-info">
-                <div class="employee-name" id="employeeName">--</div>
-                <div class="employee-id">工号: <span id="employeeId">--</span></div>
+            <div class="info">
+                <div style="font-size: 18px; font-weight: bold;" id="successName">--</div>
+                <div style="color: #666;" id="successId">工号: --</div>
             </div>
-            <div class="scan-time" id="scanTime"></div>
-            <div class="auto-close" id="autoCloseInfo"></div>
-            <div class="debug-info" id="debugInfo"></div>
+            <p id="successTime"></p>
+            <p style="color: #999; font-size: 14px;" id="closeInfo"></p>
+            <div class="debug" id="successDebug"></div>
         </div>
-        
-        <div id="errorContent" style="display: none;">
-            <div class="success-icon error-icon">✗</div>
+
+        <!-- 错误状态 -->
+        <div id="errorState" style="display: none;">
+            <div class="icon error">❌</div>
             <h1>考勤失败</h1>
-            <p id="errorMessage">系统错误，请重试</p>
-            <button onclick="retry()" style="margin-top: 15px; padding: 8px 16px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;">重试</button>
-            <div class="debug-info" id="errorDebugInfo"></div>
+            <p id="errorMessage">系统错误</p>
+            <div>
+                <button onclick="retry()">重试</button>
+                <button class="retry-btn" onclick="useFallback()">使用备用方案</button>
+            </div>
+            <div class="debug" id="errorDebug"></div>
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script>
-        // Supabase配置
+<script>
+// 直接从URL获取参数
+function getUrlParams() {
+    const params = new URLSearchParams(window.location.search);
+    return {
+        id: params.get('id'),
+        name: params.get('name') || '员工'
+    };
+}
+
+// 显示调试信息
+function showDebug(elementId, message) {
+    console.log('DEBUG:', message);
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.style.display = 'block';
+        element.innerHTML += message + '<br>';
+    }
+}
+
+// 备用方案：使用Fetch API直接调用Supabase REST API
+async function fallbackToRestAPI(employeeId, employeeName) {
+    showDebug('errorDebug', '尝试备用方案...');
+    
+    const scanData = {
+        employee_id: employeeId,
+        user_agent: navigator.userAgent,
+        scan_time: new Date().toISOString()
+    };
+
+    try {
+        // 使用Supabase REST API直接插入数据
+        const response = await fetch('https://ynkmlbczkcporjdpawbr.supabase.co/rest/v1/wechat_scans', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY',
+                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY',
+                'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify(scanData)
+        });
+
+        if (response.ok) {
+            showDebug('errorDebug', '备用方案成功！数据已记录。');
+            showSuccess(employeeName, employeeId, '（通过备用方案）');
+            return true;
+        } else {
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+    } catch (error) {
+        showDebug('errorDebug', '备用方案失败: ' + error.message);
+        return false;
+    }
+}
+
+// 显示成功页面
+function showSuccess(name, id, extraInfo = '') {
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('errorState').style.display = 'none';
+    document.getElementById('successState').style.display = 'block';
+    
+    document.getElementById('successName').textContent = name;
+    document.getElementById('successId').textContent = `工号: ${id}`;
+    document.getElementById('successTime').textContent = `时间: ${new Date().toLocaleString('zh-CN')} ${extraInfo}`;
+    document.getElementById('closeInfo').textContent = '本页面将自动关闭';
+    
+    setTimeout(() => {
+        try { window.close(); } 
+        catch (e) { 
+            document.getElementById('closeInfo').textContent = '请手动关闭此页面';
+        }
+    }, 3000);
+}
+
+// 显示错误页面
+function showError(message) {
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('successState').style.display = 'none';
+    document.getElementById('errorState').style.display = 'block';
+    document.getElementById('errorMessage').textContent = message;
+}
+
+// 重试函数
+function retry() {
+    document.getElementById('errorState').style.display = 'none';
+    document.getElementById('loadingState').style.display = 'block';
+    document.getElementById('errorDebug').innerHTML = '';
+    setTimeout(init, 500);
+}
+
+// 使用备用方案
+function useFallback() {
+    const params = getUrlParams();
+    fallbackToRestAPI(params.id, params.name);
+}
+
+// 主初始化函数
+async function init() {
+    const params = getUrlParams();
+    showDebug('loadingDebug', `员工: ${params.name} (${params.id})`);
+    
+    if (!params.id) {
+        showError('无效的二维码：缺少员工信息');
+        return;
+    }
+
+    try {
+        showDebug('loadingDebug', '正在加载Supabase库...');
+        
+        // 动态加载Supabase库
+        await loadSupabase();
+        
+        showDebug('loadingDebug', 'Supabase加载完成，开始记录数据...');
+        
+        // 记录考勤
+        const success = await recordAttendance(params.id, params.name);
+        
+        if (success) {
+            showSuccess(params.name, params.id);
+        } else {
+            showError('考勤记录失败，请使用备用方案');
+        }
+        
+    } catch (error) {
+        console.error('初始化失败:', error);
+        showDebug('errorDebug', '错误详情: ' + error.message);
+        showError('系统加载失败，请使用备用方案');
+    }
+}
+
+// 动态加载Supabase
+function loadSupabase() {
+    return new Promise((resolve, reject) => {
+        // 检查是否已加载
+        if (window.supabase) {
+            resolve();
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+        script.onload = () => {
+            // 给点时间让库初始化
+            setTimeout(resolve, 100);
+        };
+        script.onerror = () => reject(new Error('Failed to load Supabase'));
+        document.head.appendChild(script);
+    });
+}
+
+// 记录考勤
+async function recordAttendance(employeeId, employeeName) {
+    try {
+        showDebug('loadingDebug', '初始化Supabase客户端...');
+        
+        // 初始化Supabase
         const supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
         
-        // 初始化Supabase客户端
-        const supabase = supabase.createClient(supabaseUrl, supabaseKey);
-
-        // 从URL参数获取员工信息
-        const urlParams = new URLSearchParams(window.location.search);
-        const employeeId = urlParams.get('id');
-        const employeeName = urlParams.get('name') || '未知员工';
-
-        // DOM元素
-        const loadingEl = document.getElementById('loading');
-        const successContentEl = document.getElementById('successContent');
-        const errorContentEl = document.getElementById('errorContent');
-        const employeeNameEl = document.getElementById('employeeName');
-        const employeeIdEl = document.getElementById('employeeId');
-        const scanTimeEl = document.getElementById('scanTime');
-        const autoCloseInfoEl = document.getElementById('autoCloseInfo');
-        const errorMessageEl = document.getElementById('errorMessage');
-        const debugInfoEl = document.getElementById('debugInfo');
-        const errorDebugInfoEl = document.getElementById('errorDebugInfo');
-
-        // 显示加载状态
-        loadingEl.style.display = 'block';
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
         
-        // 添加调试信息
-        function addDebugInfo(message) {
-            console.log('DEBUG:', message);
-            const timestamp = new Date().toLocaleTimeString();
-            if (debugInfoEl.style.display !== 'none') {
-                debugInfoEl.innerHTML += `\n[${timestamp}] ${message}`;
-            }
-            if (errorDebugInfoEl.style.display !== 'none') {
-                errorDebugInfoEl.innerHTML += `\n[${timestamp}] ${message}`;
-            }
+        showDebug('loadingDebug', '插入扫码记录...');
+        
+        // 插入扫码记录
+        const { data, error } = await supabase
+            .from('wechat_scans')
+            .insert([{
+                employee_id: employeeId,
+                user_agent: navigator.userAgent,
+                scan_time: new Date().toISOString()
+            }])
+            .select();
+
+        if (error) {
+            showDebug('errorDebug', 'Supabase错误: ' + error.message);
+            // 尝试备用方案
+            return await fallbackToRestAPI(employeeId, employeeName);
         }
+        
+        showDebug('successDebug', '数据插入成功: ' + JSON.stringify(data));
+        return true;
+        
+    } catch (error) {
+        showDebug('errorDebug', '记录考勤异常: ' + error.message);
+        // 尝试备用方案
+        return await fallbackToRestAPI(employeeId, employeeName);
+    }
+}
 
-        async function recordAttendance() {
-            addDebugInfo('开始记录考勤流程');
-            addDebugInfo(`员工ID: ${employeeId}, 姓名: ${employeeName}`);
-
-            if (!employeeId) {
-                showError('无效的二维码：缺少员工信息');
-                return;
-            }
-
-            try {
-                // 1. 首先检查Supabase连接
-                addDebugInfo('检查Supabase连接...');
-                const { data: testData, error: testError } = await supabase
-                    .from('wechat_scans')
-                    .select('count')
-                    .limit(1);
-                
-                if (testError) {
-                    addDebugInfo('Supabase连接失败: ' + testError.message);
-                    throw new Error('数据库连接失败: ' + testError.message);
-                }
-                addDebugInfo('Supabase连接成功');
-
-                // 2. 记录到扫码记录表
-                addDebugInfo('插入扫码记录...');
-                const scanData = {
-                    employee_id: employeeId,
-                    user_agent: navigator.userAgent,
-                    scan_time: new Date().toISOString()
-                };
-                
-                addDebugInfo('插入数据: ' + JSON.stringify(scanData));
-                
-                const { data: scanResult, error: scanError } = await supabase
-                    .from('wechat_scans')
-                    .insert([scanData])
-                    .select();
-
-                if (scanError) {
-                    addDebugInfo('插入扫码记录失败: ' + scanError.message);
-                    throw new Error('记录扫码失败: ' + scanError.message);
-                }
-                
-                addDebugInfo('扫码记录插入成功: ' + JSON.stringify(scanResult));
-
-                // 3. 智能切换工作状态
-                addDebugInfo('开始切换工作状态...');
-                const statusResult = await toggleWorkStatus(employeeId);
-                addDebugInfo(`工作状态切换结果: ${statusResult}`);
-
-                // 4. 显示成功界面
-                showSuccess();
-
-            } catch (error) {
-                console.error('记录考勤失败:', error);
-                addDebugInfo('最终错误: ' + error.message);
-                showError(error.message || '系统繁忙，请稍后重试');
-            }
-        }
-
-        // 智能切换工作状态
-        async function toggleWorkStatus(employeeId) {
-            try {
-                addDebugInfo('获取现有工作记录...');
-                
-                // 先获取现有的工作记录
-                const { data: existingRecords, error: fetchError } = await supabase
-                    .from('work_records')
-                    .select('*')
-                    .eq('employee_id', employeeId);
-                
-                if (fetchError) {
-                    addDebugInfo('获取工作记录失败: ' + fetchError.message);
-                    // 如果表不存在，我们继续创建新记录
-                    if (!fetchError.message.includes('不存在')) {
-                        throw fetchError;
-                    }
-                }
-                
-                const existingRecord = existingRecords && existingRecords[0];
-                const now = new Date().toISOString();
-                
-                addDebugInfo(`现有记录: ${existingRecord ? JSON.stringify(existingRecord) : '无'}`);
-
-                if (existingRecord && existingRecord.is_working) {
-                    // 如果正在工作，则暂停工作
-                    addDebugInfo('员工正在工作，执行暂停操作...');
-                    const startTime = new Date(existingRecord.start_time);
-                    const workTimeHours = (new Date() - startTime) / (1000 * 60 * 60);
-                    const newTotalHours = (parseFloat(existingRecord.total_hours) || 0) + workTimeHours;
-
-                    const updateData = {
-                        is_working: false,
-                        start_time: null,
-                        total_hours: newTotalHours,
-                        last_updated: now
-                    };
-                    
-                    addDebugInfo('更新数据: ' + JSON.stringify(updateData));
-
-                    const { error: updateError } = await supabase
-                        .from('work_records')
-                        .update(updateData)
-                        .eq('employee_id', employeeId);
-
-                    if (updateError) {
-                        addDebugInfo('更新工作记录失败: ' + updateError.message);
-                        throw updateError;
-                    }
-                    
-                    addDebugInfo(`工作暂停成功，本次工作时长: ${workTimeHours.toFixed(2)}小时`);
-                    return `pause:${workTimeHours.toFixed(2)}`;
-
-                } else {
-                    // 如果未工作，则开始工作
-                    addDebugInfo('员工未工作，执行开始操作...');
-                    const recordData = {
-                        employee_id: employeeId,
-                        is_working: true,
-                        start_time: now,
-                        total_hours: existingRecord ? parseFloat(existingRecord.total_hours) : 0,
-                        last_updated: now
-                    };
-                    
-                    addDebugInfo('插入/更新数据: ' + JSON.stringify(recordData));
-
-                    const { error: upsertError } = await supabase
-                        .from('work_records')
-                        .upsert(recordData, { onConflict: 'employee_id' });
-
-                    if (upsertError) {
-                        addDebugInfo('插入工作记录失败: ' + upsertError.message);
-                        throw upsertError;
-                    }
-                    
-                    addDebugInfo('工作开始成功');
-                    return 'start';
-                }
-
-            } catch (error) {
-                addDebugInfo('切换工作状态失败: ' + error.message);
-                // 这里不抛出错误，因为扫码记录已经成功，只是状态切换失败
-                return 'error:' + error.message;
-            }
-        }
-
-        function showSuccess() {
-            loadingEl.style.display = 'none';
-            successContentEl.style.display = 'block';
-            
-            // 显示员工信息
-            employeeNameEl.textContent = employeeName;
-            employeeIdEl.textContent = employeeId;
-            
-            // 显示扫码时间
-            const now = new Date();
-            scanTimeEl.textContent = `扫码时间: ${now.toLocaleString('zh-CN')}`;
-            
-            // 自动关闭提示
-            autoCloseInfoEl.textContent = '本页面将在3秒后自动关闭';
-            
-            // 显示调试信息（开发时可用）
-            debugInfoEl.style.display = 'block';
-            debugInfoEl.textContent = '调试信息已记录到控制台';
-            
-            // 3秒后尝试关闭窗口
-            setTimeout(() => {
-                try {
-                    window.close();
-                } catch (e) {
-                    autoCloseInfoEl.textContent = '您可以手动关闭此页面';
-                }
-            }, 3000);
-        }
-
-        function showError(message) {
-            loadingEl.style.display = 'none';
-            errorContentEl.style.display = 'block';
-            errorMessageEl.textContent = message;
-            errorDebugInfoEl.style.display = 'block';
-            errorDebugInfoEl.textContent = '详细错误信息请查看浏览器控制台 (F12)';
-        }
-
-        function retry() {
-            loadingEl.style.display = 'block';
-            errorContentEl.style.display = 'none';
-            recordAttendance();
-        }
-
-        // 页面加载完成后开始记录
-        document.addEventListener('DOMContentLoaded', function() {
-            addDebugInfo('页面加载完成，开始记录考勤');
-            recordAttendance();
-        });
-    </script>
+// 页面加载时启动
+document.addEventListener('DOMContentLoaded', function() {
+    showDebug('loadingDebug', '页面加载完成，开始初始化...');
+    setTimeout(init, 100);
+});
+</script>
 </body>
 </html>
