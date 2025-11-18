@@ -215,13 +215,15 @@ async function init() {
         showDebug('loadingDebug', 'Supabase加载完成，开始记录数据...');
         
         // 记录考勤
-        const success = await recordAttendance(params.id, params.name);
-        
-        if (success) {
-            showSuccess(params.name, params.id);
-        } else {
-            showError('考勤记录失败，请使用备用方案');
-        }
+const success = await recordAttendance(params.id, params.name);
+
+if (success && success.action) {
+    showSuccess(params.name, params.id, success.action);
+} else if (success) {
+    showSuccess(params.name, params.id, '考勤');
+} else {
+    showError('考勤记录失败，请使用备用方案');
+}
         
     } catch (error) {
         console.error('初始化失败:', error);
@@ -406,5 +408,6 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 </body>
 </html>
+
 
 
