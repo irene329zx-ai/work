@@ -301,11 +301,11 @@ async function recordAttendance(employeeId, employeeName) {
 }
 
 // 更新工作状态 - 核心逻辑（完整修复版）
+// 更新工作状态 - 完整功能版本
 async function updateWorkStatus(supabase, employeeId, employeeName) {
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
         
-        // 1. 获取员工当前的工作状态
         const { data: currentRecords, error: fetchError } = await supabase
             .from('work_records')
             .select('*')
@@ -315,85 +315,73 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
             throw new Error(`查询工作记录失败: ${fetchError.message}`);
         }
 
-        // 处理查询结果
         const currentRecord = currentRecords && currentRecords.length > 0 ? currentRecords[0] : null;
-        const now = new Date().toISOString();
-        const today = new Date().toDateString();
+        const now = new Date();
+        const nowISO = now.toISOString();
+        const today = now.toDateString();
         let action = '';
         let newRecord = {};
 
-        showDebug('loadingDebug', `当前记录: ${currentRecord ? '存在' : '不存在'}, 工作状态: ${currentRecord?.is_working ? '工作中' : '未工作'}`);
-
         if (currentRecord && currentRecord.is_working) {
-            // 情况1：员工正在工作 → 暂停工作
-            showDebug('loadingDebug', '员工正在工作，执行下工操作...');
+            // 下工操作
             action = '下工';
-            
-            // 计算本次工作时长
             const startTime = new Date(currentRecord.start_time);
-            const workTimeHours = (new Date() - startTime) / (1000 * 60 * 60);
+            const workTimeHours = (now - startTime) / (1000 * 60 * 60);
             const newTotalHours = (parseFloat(currentRecord.total_hours) || 0) + workTimeHours;
             
-            // 计算今日工时（如果开始时间是今天）
+            // 计算今日工时
             let newTodayHours = parseFloat(currentRecord.today_hours) || 0;
             if (startTime.toDateString() === today) {
                 newTodayHours += workTimeHours;
             }
             
-            // 更新记录：暂停工作
             newRecord = {
                 employee_id: employeeId,
                 is_working: false,
                 start_time: null,
                 total_hours: newTotalHours,
                 today_hours: newTodayHours,
-                last_updated: now,
+                last_updated_day: today,
+                last_updated: nowISO,
                 history: [
                     ...(currentRecord.history || []),
                     {
                         action: `微信扫码下工 - 工作时长: ${workTimeHours.toFixed(2)}小时`,
-                        timestamp: now
+                        timestamp: nowISO
                     }
                 ]
             };
             
         } else {
-            // 情况2：员工未工作或记录不存在 → 开始工作
-            showDebug('loadingDebug', '员工未工作，执行上工操作...');
+            // 上工操作
             action = '上工';
             
-            // 重置今日工时（如果是新的一天）
-            let todayHours = 0;
-            if (currentRecord && currentRecord.last_updated) {
-                const lastUpdatedDate = new Date(currentRecord.last_updated).toDateString();
-                if (lastUpdatedDate !== today) {
-                    todayHours = 0; // 新的一天，重置今日工时
-                } else {
-                    todayHours = parseFloat(currentRecord.today_hours) || 0;
-                }
+            // 检查是否需要重置今日工时（新的一天）
+            let todayHours = parseFloat(currentRecord?.today_hours) || 0;
+            const lastUpdatedDay = currentRecord?.last_updated_day;
+            if (!lastUpdatedDay || lastUpdatedDay !== today) {
+                todayHours = 0; // 新的一天，重置今日工时
             }
             
-            // 创建或更新记录：开始工作
             newRecord = {
                 employee_id: employeeId,
                 is_working: true,
-                start_time: now,
+                start_time: nowISO,
                 total_hours: currentRecord ? parseFloat(currentRecord.total_hours) : 0,
                 today_hours: todayHours,
-                last_updated: now,
+                last_updated_day: today,
+                last_updated: nowISO,
                 history: [
                     ...(currentRecord?.history || []),
                     {
                         action: '微信扫码上工',
-                        timestamp: now
+                        timestamp: nowISO
                     }
                 ]
             };
         }
 
-        showDebug('loadingDebug', `执行${action}操作，更新数据...`);
-        
-        // 插入或更新工作记录
+        // 更新数据库
         const { data: workData, error: workError } = await supabase
             .from('work_records')
             .upsert(newRecord, { 
@@ -430,6 +418,7 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 </body>
 </html>
+
 
 
 
