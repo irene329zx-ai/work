@@ -53,34 +53,6 @@
             margin: 5px;
         }
         .retry-btn { background: #e74c3c; }
-        
-        /* 扫描者信息样式 */
-        .scanner-info {
-            background: #e8f4fd;
-            border: 1px solid #3498db;
-            border-radius: 8px;
-            padding: 12px;
-            margin: 15px 0;
-            text-align: left;
-        }
-        .scanner-label {
-            font-weight: bold;
-            color: #2c3e50;
-            margin-bottom: 5px;
-        }
-        .scanner-value {
-            color: #3498db;
-            font-size: 14px;
-        }
-        .scanner-tag {
-            display: inline-block;
-            background: #f39c12;
-            color: white;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 11px;
-            margin-left: 5px;
-        }
     </style>
 </head>
 <body>
@@ -90,13 +62,6 @@
             <div class="icon loading">⏳</div>
             <h1>处理中...</h1>
             <p>正在记录考勤信息</p>
-            
-            <!-- 扫描者信息显示区域 -->
-            <div class="scanner-info" id="scannerInfoLoading" style="display: none;">
-                <div class="scanner-label">扫描者身份识别中...</div>
-                <div class="scanner-value" id="scannerIdentityLoading"></div>
-            </div>
-            
             <div class="debug" id="loadingDebug"></div>
         </div>
 
@@ -108,14 +73,6 @@
                 <div style="font-size: 18px; font-weight: bold;" id="successName">--</div>
                 <div style="color: #666;" id="successId">工号: --</div>
             </div>
-            
-            <!-- 扫描者信息显示区域 -->
-            <div class="scanner-info" id="scannerInfoSuccess">
-                <div class="scanner-label">扫描者信息</div>
-                <div class="scanner-value" id="scannerIdentitySuccess"></div>
-                <div class="scanner-value" id="scannerTypeSuccess"></div>
-            </div>
-            
             <p id="successTime"></p>
             <p style="color: #999; font-size: 14px;" id="closeInfo"></p>
             <div class="debug" id="successDebug"></div>
@@ -126,13 +83,6 @@
             <div class="icon error">❌</div>
             <h1>考勤失败</h1>
             <p id="errorMessage">系统错误</p>
-            
-            <!-- 扫描者信息显示区域 -->
-            <div class="scanner-info" id="scannerInfoError" style="display: none;">
-                <div class="scanner-label">扫描者信息</div>
-                <div class="scanner-value" id="scannerIdentityError"></div>
-            </div>
-            
             <div>
                 <button onclick="retry()">重试</button>
                 <button class="retry-btn" onclick="useFallback()">使用备用方案</button>
@@ -142,62 +92,6 @@
     </div>
 
 <script>
-// 扫描者身份管理类
-class ScannerIdentityManager {
-    constructor() {
-        this.engineers = JSON.parse(localStorage.getItem('engineers')) || {};
-        this.currentScannerId = this.generateBrowserFingerprint();
-    }
-    
-    // 生成浏览器指纹
-    generateBrowserFingerprint() {
-        const components = [
-            navigator.userAgent,
-            navigator.language,
-            screen.colorDepth,
-            screen.width + 'x' + screen.height,
-            new Date().getTimezoneOffset()
-        ].join('|');
-        
-        // 简单哈希生成指纹
-        let hash = 0;
-        for (let i = 0; i < components.length; i++) {
-            const char = components.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash;
-        }
-        return 'scanner_' + Math.abs(hash).toString(36);
-    }
-    
-    // 获取当前扫描者身份
-    getCurrentScanner() {
-        return {
-            identity: this.currentScannerId,
-            name: this.engineers[this.currentScannerId] || '未知扫描者',
-            type: 'browser_fingerprint'
-        };
-    }
-    
-    // 注册当前设备为工程师
-    registerCurrentDevice(engineerName) {
-        if (!engineerName || engineerName.trim() === '') {
-            return { success: false, message: '请输入工程师姓名' };
-        }
-        
-        this.engineers[this.currentScannerId] = engineerName.trim();
-        localStorage.setItem('engineers', JSON.stringify(this.engineers));
-        
-        return { 
-            success: true, 
-            message: `设备已注册为工程师: ${engineerName}`,
-            scanner: this.getCurrentScanner()
-        };
-    }
-}
-
-// 创建扫描者身份管理器实例
-const scannerManager = new ScannerIdentityManager();
-
 // 直接从URL获取参数
 function getUrlParams() {
     const params = new URLSearchParams(window.location.search);
@@ -217,39 +111,14 @@ function showDebug(elementId, message) {
     }
 }
 
-// 显示扫描者信息
-function showScannerInfo(stage, scanner) {
-    const scannerInfoElement = document.getElementById(`scannerInfo${stage}`);
-    const scannerIdentityElement = document.getElementById(`scannerIdentity${stage}`);
-    const scannerTypeElement = document.getElementById(`scannerType${stage}`);
-    
-    if (scannerInfoElement && scannerIdentityElement) {
-        scannerInfoElement.style.display = 'block';
-        
-        if (stage === 'Loading') {
-            scannerIdentityElement.textContent = `身份ID: ${scanner.identity}`;
-        } else if (stage === 'Success') {
-            scannerIdentityElement.textContent = `扫描者: ${scanner.name}`;
-            if (scannerTypeElement) {
-                scannerTypeElement.textContent = `身份类型: ${scanner.type === 'browser_fingerprint' ? '设备指纹' : scanner.type}`;
-            }
-        } else if (stage === 'Error') {
-            scannerIdentityElement.textContent = `身份ID: ${scanner.identity}`;
-        }
-    }
-}
-
 // 备用方案：使用Fetch API直接调用Supabase REST API
-async function fallbackToRestAPI(employeeId, employeeName, scannerInfo) {
+async function fallbackToRestAPI(employeeId, employeeName) {
     showDebug('errorDebug', '尝试备用方案...');
     
     const scanData = {
         employee_id: employeeId,
         user_agent: navigator.userAgent,
-        scan_time: new Date().toISOString(),
-        scanner_identity: scannerInfo.identity,
-        scanner_type: scannerInfo.type,
-        scanner_name: scannerInfo.name
+        scan_time: new Date().toISOString()
     };
 
     try {
@@ -267,11 +136,12 @@ async function fallbackToRestAPI(employeeId, employeeName, scannerInfo) {
 
         if (response.ok) {
             showDebug('errorDebug', '备用方案成功！数据已记录。');
-            showSuccess(employeeName, employeeId, '（通过备用方案）', scannerInfo);
+            showSuccess(employeeName, employeeId, '（通过备用方案）');
             return true;
         } else {
             const errorText = await response.text();
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
+            throw new Error(`HTTP response.status:
+{errorText}`);
         }
     } catch (error) {
         showDebug('errorDebug', '备用方案失败: ' + error.message);
@@ -280,22 +150,21 @@ async function fallbackToRestAPI(employeeId, employeeName, scannerInfo) {
 }
 
 // 显示成功页面
-function showSuccess(name, id, action = '', scannerInfo) {
+function showSuccess(name, id, action = '') {
     document.getElementById('loadingState').style.display = 'none';
     document.getElementById('errorState').style.display = 'none';
     document.getElementById('successState').style.display = 'block';
     
     document.getElementById('successName').textContent = name;
-    document.getElementById('successId').textContent = `工号: ${id}`;
-    
-    // 显示扫描者信息
-    showScannerInfo('Success', scannerInfo);
+    document.getElementById('successId').textContent = `工号: {id}`;
     
     // 显示具体的操作结果
     if (action) {
-        document.getElementById('successTime').textContent = `${action}成功 - 时间: ${new Date().toLocaleString('zh-CN')}`;
+        document.getElementById('successTime').textContent = `
+{action}成功 - 时间: {new Date().toLocaleString('zh-CN')}`;
     } else {
-        document.getElementById('successTime').textContent = `时间: ${new Date().toLocaleString('zh-CN')}`;
+        document.getElementById('successTime').textContent = `时间:
+{new Date().toLocaleString('zh-CN')}`;
     }
     
     document.getElementById('closeInfo').textContent = '本页面将自动关闭';
@@ -309,16 +178,11 @@ function showSuccess(name, id, action = '', scannerInfo) {
 }
 
 // 显示错误页面
-function showError(message, scannerInfo = null) {
+function showError(message) {
     document.getElementById('loadingState').style.display = 'none';
     document.getElementById('successState').style.display = 'none';
     document.getElementById('errorState').style.display = 'block';
     document.getElementById('errorMessage').textContent = message;
-    
-    // 如果提供了扫描者信息，在错误页面也显示
-    if (scannerInfo) {
-        showScannerInfo('Error', scannerInfo);
-    }
 }
 
 // 重试函数
@@ -332,14 +196,14 @@ function retry() {
 // 使用备用方案
 function useFallback() {
     const params = getUrlParams();
-    const scannerInfo = scannerManager.getCurrentScanner();
-    fallbackToRestAPI(params.id, params.name, scannerInfo);
+    fallbackToRestAPI(params.id, params.name);
 }
 
 // 主初始化函数
 async function init() {
     const params = getUrlParams();
-    showDebug('loadingDebug', `员工: ${params.name} (${params.id})`);
+    showDebug('loadingDebug', `员工: params.name(
+{params.id})`);
     
     if (!params.id) {
         showError('无效的二维码：缺少员工信息');
@@ -347,13 +211,6 @@ async function init() {
     }
 
     try {
-        // 获取扫描者身份信息
-        const scannerInfo = scannerManager.getCurrentScanner();
-        showDebug('loadingDebug', `扫描者: ${scannerInfo.name} (${scannerInfo.identity})`);
-        
-        // 显示扫描者信息
-        showScannerInfo('Loading', scannerInfo);
-        
         showDebug('loadingDebug', '正在加载Supabase库...');
         
         // 动态加载Supabase库
@@ -362,15 +219,15 @@ async function init() {
         showDebug('loadingDebug', 'Supabase加载完成，开始记录数据...');
         
         // 记录考勤
-        const success = await recordAttendance(params.id, params.name, scannerInfo);
+const success = await recordAttendance(params.id, params.name);
 
-        if (success && success.action) {
-            showSuccess(params.name, params.id, success.action, scannerInfo);
-        } else if (success) {
-            showSuccess(params.name, params.id, '考勤', scannerInfo);
-        } else {
-            showError('考勤记录失败，请使用备用方案', scannerInfo);
-        }
+if (success && success.action) {
+    showSuccess(params.name, params.id, success.action);
+} else if (success) {
+    showSuccess(params.name, params.id, '考勤');
+} else {
+    showError('考勤记录失败，请使用备用方案');
+}
         
     } catch (error) {
         console.error('初始化失败:', error);
@@ -400,7 +257,7 @@ function loadSupabase() {
 }
 
 // 记录考勤 - 完整版本
-async function recordAttendance(employeeId, employeeName, scannerInfo) {
+async function recordAttendance(employeeId, employeeName) {
     try {
         showDebug('loadingDebug', '初始化Supabase客户端...');
         
@@ -411,16 +268,13 @@ async function recordAttendance(employeeId, employeeName, scannerInfo) {
         
         showDebug('loadingDebug', '1. 插入扫码记录...');
         
-        // 1. 插入扫码记录（包含扫描者信息）
+        // 1. 插入扫码记录
         const { data: scanData, error: scanError } = await supabase
             .from('wechat_scans')
             .insert([{
                 employee_id: employeeId,
                 user_agent: navigator.userAgent,
-                scan_time: new Date().toISOString(),
-                scanner_identity: scannerInfo.identity,
-                scanner_type: scannerInfo.type,
-                scanner_name: scannerInfo.name
+                scan_time: new Date().toISOString()
             }])
             .select();
 
@@ -434,24 +288,24 @@ async function recordAttendance(employeeId, employeeName, scannerInfo) {
         showDebug('loadingDebug', '2. 更新工作状态...');
         
         // 2. 更新工作状态（这是关键！）
-        const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName, scannerInfo);
+        const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName);
         
         if (workStatusResult.success) {
-            showDebug('successDebug', `工作状态更新成功: ${workStatusResult.action}`);
-            return { success: true, action: workStatusResult.action };
+            showDebug('successDebug', `工作状态更新成功: {workStatusResult.action}`);
+            return true;
         } else {
             showDebug('errorDebug', '工作状态更新失败: ' + workStatusResult.error);
-            return { success: false };
+            return false;
         }
         
     } catch (error) {
         showDebug('errorDebug', '记录考勤异常: ' + error.message);
-        return { success: false };
+        return false;
     }
 }
 
 // 更新工作状态 - 核心逻辑
-async function updateWorkStatus(supabase, employeeId, employeeName, scannerInfo) {
+async function updateWorkStatus(supabase, employeeId, employeeName) {
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
         
@@ -491,9 +345,9 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerInfo)
                 history: [
                     ...(currentRecord.history || []),
                     {
-                        action: `微信扫码下工 - 扫描者: ${scannerInfo.name} - 工作时长: ${workTimeHours.toFixed(2)}小时`,
-                        timestamp: now,
-                        scanner: scannerInfo
+                        action: `微信扫码下工 - 工作时长:
+{workTimeHours.toFixed(2)}小时`,
+                        timestamp: now
                     }
                 ]
             };
@@ -513,25 +367,15 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerInfo)
                 history: [
                     ...(currentRecord?.history || []),
                     {
-                        action: `微信扫码上工 - 扫描者: ${scannerInfo.name}`,
-                        timestamp: now,
-                        scanner: scannerInfo
+                        action: '微信扫码上工',
+                        timestamp: now
                     }
                 ]
             };
         }
 
-        showDebug('loadingDebug', `执行${action}操作，更新数据...`);
-        
-        // 插入或更新工作记录
-        const { data: workData, error: workError } = await supabase
-            .from('work_records')
-            .upsert(newRecord, { onConflict: 'employee_id', ignoreDuplicates: false })
-            .select();
-            
-        if (workError) throw new Error(`工作记录更新失败: ${workError.message}`);
-        
-        showDebug('successDebug', `${action}操作成功完成`);
+        showDebug('loadingDebug', `执行action操作，更新数据...‘);//插入或更新工作记录constdata:workData,error:workError=awaitsupabase.from(′workrecords′).upsert(newRecord,onConflict:′employeeid′,ignoreDuplicates:false).select();if(workError)thrownewError(‘工作记录更新失败:$workError.message‘);showDebug(′successDebug′,‘
+{action}操作成功完成`);
         return {
             success: true,
             action: action,
