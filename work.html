@@ -465,6 +465,25 @@
             margin: 2px 0;
             font-size: 14px;
         }
+
+        /* 新增：微信扫码记录样式 */
+        .wechat-scan-item {
+            padding: 8px 12px;
+            border-bottom: 1px solid #eee;
+            font-size: 13px;
+            background: #f8f9fa;
+            margin-bottom: 5px;
+            border-radius: 5px;
+        }
+
+        .wechat-scan-time {
+            color: #7f8c8d;
+            font-size: 11px;
+        }
+
+        .recent-activity {
+            margin-top: 15px;
+        }
     </style>
 </head>
 <body>
@@ -529,6 +548,14 @@
                         <h2>今日工时排行</h2>
                         <div class="work-history" id="workRanking">
                             <!-- 工时排行将通过JavaScript动态生成 -->
+                        </div>
+                    </div>
+
+                    <!-- 新增：微信扫码记录 -->
+                    <div class="card">
+                        <h2>最近微信扫码记录</h2>
+                        <div class="recent-activity" id="wechatScansList">
+                            <!-- 微信扫码记录将通过JavaScript动态生成 -->
                         </div>
                     </div>
                 </div>
@@ -863,6 +890,7 @@
         let videoStream = null;
         let currentEmployeeId = null;
         let isScanning = false;
+        let lastWechatScanCheck = 0; // 新增：记录上次检查微信扫码的时间
         
         // DOM元素
         const employeeNameInput = document.getElementById('employeeName');
@@ -901,6 +929,7 @@
         const statActiveEmployees = document.getElementById('statActiveEmployees');
         const syncToCloudBtn = document.getElementById('syncToCloud');
         const syncFromCloudBtn = document.getElementById('syncFromCloud');
+        const wechatScansList = document.getElementById('wechatScansList'); // 新增：微信扫码记录列表
         
         // 时间格式化函数
         function formatDateTime(timestamp) {
@@ -1091,6 +1120,7 @@
             updateTotalHours();
             updateStats();
             renderSystemLogs();
+            loadWechatScans(); // 新增：加载微信扫码记录
             
             // 生成二维码按钮事件
             generateQRBtn.addEventListener('click', generateQRCode);
@@ -1131,6 +1161,7 @@
                 updateEmployeeSelect();
                 updateTotalHours();
                 updateStats();
+                loadWechatScans(); // 重新加载微信扫码记录
             });
             
             // 标签页切换事件
@@ -1154,6 +1185,11 @@
                     if (tabId === 'data-tab') {
                         updateStats();
                     }
+
+                    // 如果切换到后台管理，加载微信扫码记录
+                    if (tabId === 'admin-tab') {
+                        loadWechatScans();
+                    }
                 });
             });
             
@@ -1161,7 +1197,8 @@
             setInterval(() => {
                 renderEmployeeList();
                 updateTotalHours();
-            }, 1000);
+                checkWechatScansAndUpdate(); // 新增：检查微信扫码更新
+            }, 2000);
             
             // 定时同步到云端（每2分钟）
             setInterval(async () => {
@@ -1174,55 +1211,55 @@
         
         // 生成二维码
         function generateQRCode() {
-    const name = employeeNameInput.value.trim();
-    const id = employeeIdInput.value.trim();
-    
-    // 输入验证
-    const validationError = validateEmployeeInput(name, id);
-    if (validationError) {
-        showNotification(validationError, 'error');
-        return;
-    }
-    
-    // 检查员工是否已存在
-    if (employees.some(emp => emp.id === id)) {
-        showNotification('该工号已存在', 'error');
-        return;
-    }
-    
-    // 添加员工到列表
-    employees.push({ name, id });
-    localStorage.setItem('employees', JSON.stringify(employees));
-    
-    // 生成微信可扫描的二维码URL
-    const successPageUrl = `https://irene329zx-ai.github.io/work/scan-success.html?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}`;
-    
-    // 生成二维码
-    qrPlaceholder.style.display = 'none';
-    
-    QRCode.toCanvas(document.getElementById('qrcode'), successPageUrl, {
-        width: 200,
-        margin: 1,
-        color: {
-            dark: '#000000',
-            light: '#FFFFFF'
-        }
-    }, function(error) {
-        if (error) {
-            console.error(error);
-            showNotification('生成二维码失败', 'error');
-        } else {
-            showNotification('微信可扫描的二维码已生成！员工扫码后会自动记录考勤', 'success');
-            renderEmployeeList();
-            updateEmployeeSelect();
-            updateStats();
-            addSystemLog(`添加员工: ${name} (${id}) - 生成微信二维码`);
+            const name = employeeNameInput.value.trim();
+            const id = employeeIdInput.value.trim();
             
-            // 同步到云端
-            cloudSync.uploadAllData();
+            // 输入验证
+            const validationError = validateEmployeeInput(name, id);
+            if (validationError) {
+                showNotification(validationError, 'error');
+                return;
+            }
+            
+            // 检查员工是否已存在
+            if (employees.some(emp => emp.id === id)) {
+                showNotification('该工号已存在', 'error');
+                return;
+            }
+            
+            // 添加员工到列表
+            employees.push({ name, id });
+            localStorage.setItem('employees', JSON.stringify(employees));
+            
+            // 生成微信可扫描的二维码URL
+            const successPageUrl = `https://irene329zx-ai.github.io/work/scan-success.html?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}`;
+            
+            // 生成二维码
+            qrPlaceholder.style.display = 'none';
+            
+            QRCode.toCanvas(document.getElementById('qrcode'), successPageUrl, {
+                width: 200,
+                margin: 1,
+                color: {
+                    dark: '#000000',
+                    light: '#FFFFFF'
+                }
+            }, function(error) {
+                if (error) {
+                    console.error(error);
+                    showNotification('生成二维码失败', 'error');
+                } else {
+                    showNotification('微信可扫描的二维码已生成！员工扫码后会自动记录考勤', 'success');
+                    renderEmployeeList();
+                    updateEmployeeSelect();
+                    updateStats();
+                    addSystemLog(`添加员工: ${name} (${id}) - 生成微信二维码`);
+                    
+                    // 同步到云端
+                    cloudSync.uploadAllData();
+                }
+            });
         }
-    });
-}
         
         // 输入验证
         function validateEmployeeInput(name, id) {
@@ -1891,6 +1928,130 @@
                 notification.classList.remove('show');
             }, 3000);
         }
+
+        // ==================== 新增：微信扫码相关功能 ====================
+
+        // 加载微信扫码记录
+        async function loadWechatScans() {
+            try {
+                const { data: scans, error } = await cloudSync.supabase
+                    .from('wechat_scans')
+                    .select('*')
+                    .order('scan_time', { ascending: false })
+                    .limit(10);
+
+                if (error) {
+                    console.error('加载微信扫码记录失败:', error);
+                    return;
+                }
+
+                renderWechatScans(scans || []);
+            } catch (error) {
+                console.error('加载微信扫码记录异常:', error);
+            }
+        }
+
+        // 渲染微信扫码记录
+        function renderWechatScans(scans) {
+            wechatScansList.innerHTML = '';
+
+            if (scans.length === 0) {
+                wechatScansList.innerHTML = '<div class="empty-state">暂无微信扫码记录</div>';
+                return;
+            }
+
+            scans.forEach(scan => {
+                const scanItem = document.createElement('div');
+                scanItem.className = 'wechat-scan-item';
+                
+                const employee = employees.find(emp => emp.id === scan.employee_id);
+                const employeeName = employee ? employee.name : scan.employee_id;
+                const scanTime = new Date(scan.scan_time).toLocaleString('zh-CN');
+
+                scanItem.innerHTML = `
+                    <div><strong>${employeeName}</strong> (${scan.employee_id})</div>
+                    <div class="wechat-scan-time">${scanTime}</div>
+                `;
+
+                wechatScansList.appendChild(scanItem);
+            });
+        }
+
+        // 检查微信扫码并更新状态
+        async function checkWechatScansAndUpdate() {
+            // 每10秒检查一次，避免频繁请求
+            const now = Date.now();
+            if (now - lastWechatScanCheck < 10000) return;
+            lastWechatScanCheck = now;
+
+            try {
+                const { data: recentScans, error } = await cloudSync.supabase
+                    .from('wechat_scans')
+                    .select('*')
+                    .order('scan_time', { ascending: false })
+                    .limit(1);
+
+                if (error || !recentScans || recentScans.length === 0) return;
+
+                const latestScan = recentScans[0];
+                const scanTime = new Date(latestScan.scan_time).getTime();
+                
+                // 检查这个扫码记录是否已经处理过（避免重复处理）
+                const lastProcessedScanTime = localStorage.getItem('lastProcessedScanTime') || 0;
+                
+                if (scanTime > lastProcessedScanTime) {
+                    console.log('检测到新的微信扫码，更新工作状态:', latestScan.employee_id);
+                    
+                    // 从云端重新同步工作记录，确保数据最新
+                    await syncWorkRecordsFromCloud();
+                    
+                    // 更新界面
+                    renderEmployeeList();
+                    updateTotalHours();
+                    updateStats();
+                    loadWechatScans();
+                    
+                    // 记录已处理
+                    localStorage.setItem('lastProcessedScanTime', scanTime);
+                    
+                    // 显示通知
+                    const employee = employees.find(emp => emp.id === latestScan.employee_id);
+                    if (employee) {
+                        showNotification(`员工 ${employee.name} 微信扫码考勤已更新`, 'success');
+                    }
+                }
+            } catch (error) {
+                console.error('检查微信扫码记录失败:', error);
+            }
+        }
+
+        // 从云端同步工作记录
+        async function syncWorkRecordsFromCloud() {
+            try {
+                const { data: records, error } = await cloudSync.supabase
+                    .from('work_records')
+                    .select('*');
+
+                if (!error && records) {
+                    // 更新本地 workRecords
+                    const newWorkRecords = {};
+                    records.forEach(record => {
+                        newWorkRecords[record.employee_id] = {
+                            totalHours: record.total_hours || 0,
+                            isWorking: record.is_working || false,
+                            startTime: record.start_time ? new Date(record.start_time).getTime() : null,
+                            history: record.history || []
+                        };
+                    });
+                    
+                    workRecords = newWorkRecords;
+                    localStorage.setItem('workRecords', JSON.stringify(workRecords));
+                }
+            } catch (error) {
+                console.error('从云端同步工作记录失败:', error);
+            }
+        }
+
     </script>
 </body>
 </html>
