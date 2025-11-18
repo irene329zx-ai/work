@@ -300,12 +300,12 @@ async function recordAttendance(employeeId, employeeName) {
     }
 }
 
-// 更新工作状态 - 核心逻辑（修复版）
+// 更新工作状态 - 核心逻辑（完整修复版）
 async function updateWorkStatus(supabase, employeeId, employeeName) {
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
         
-        // 1. 获取员工当前的工作状态 - 修复：使用select().eq()而不是single()
+        // 1. 获取员工当前的工作状态
         const { data: currentRecords, error: fetchError } = await supabase
             .from('work_records')
             .select('*')
@@ -315,10 +315,14 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
             throw new Error(`查询工作记录失败: ${fetchError.message}`);
         }
 
+        // 处理查询结果
         const currentRecord = currentRecords && currentRecords.length > 0 ? currentRecords[0] : null;
         const now = new Date().toISOString();
+        const today = new Date().toDateString();
         let action = '';
         let newRecord = {};
+
+        showDebug('loadingDebug', `当前记录: ${currentRecord ? '存在' : '不存在'}, 工作状态: ${currentRecord?.is_working ? '工作中' : '未工作'}`);
 
         if (currentRecord && currentRecord.is_working) {
             // 情况1：员工正在工作 → 暂停工作
@@ -330,13 +334,19 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
             const workTimeHours = (new Date() - startTime) / (1000 * 60 * 60);
             const newTotalHours = (parseFloat(currentRecord.total_hours) || 0) + workTimeHours;
             
+            // 计算今日工时（如果开始时间是今天）
+            let newTodayHours = parseFloat(currentRecord.today_hours) || 0;
+            if (startTime.toDateString() === today) {
+                newTodayHours += workTimeHours;
+            }
+            
             // 更新记录：暂停工作
             newRecord = {
                 employee_id: employeeId,
                 is_working: false,
                 start_time: null,
                 total_hours: newTotalHours,
-                today_hours: parseFloat(currentRecord.today_hours) || 0, // 添加今日工时
+                today_hours: newTodayHours,
                 last_updated: now,
                 history: [
                     ...(currentRecord.history || []),
@@ -352,13 +362,24 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
             showDebug('loadingDebug', '员工未工作，执行上工操作...');
             action = '上工';
             
+            // 重置今日工时（如果是新的一天）
+            let todayHours = 0;
+            if (currentRecord && currentRecord.last_updated) {
+                const lastUpdatedDate = new Date(currentRecord.last_updated).toDateString();
+                if (lastUpdatedDate !== today) {
+                    todayHours = 0; // 新的一天，重置今日工时
+                } else {
+                    todayHours = parseFloat(currentRecord.today_hours) || 0;
+                }
+            }
+            
             // 创建或更新记录：开始工作
             newRecord = {
                 employee_id: employeeId,
                 is_working: true,
                 start_time: now,
                 total_hours: currentRecord ? parseFloat(currentRecord.total_hours) : 0,
-                today_hours: currentRecord ? parseFloat(currentRecord.today_hours) : 0, // 添加今日工时
+                today_hours: todayHours,
                 last_updated: now,
                 history: [
                     ...(currentRecord?.history || []),
@@ -409,6 +430,7 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 </body>
 </html>
+
 
 
 
