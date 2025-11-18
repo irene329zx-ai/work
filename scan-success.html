@@ -243,16 +243,8 @@ async function fallbackToRestAPI(employeeId, employeeName, operatorInfo, deviceI
         });
 
         if (response.ok) {
-            showDebug('errorDebug', '备用方案成功！数据已记录。');
-            
-            // 尝试更新工作状态
-            const workStatusUpdated = await updateWorkStatusFallback(employeeId, employeeName, operatorInfo, deviceInfo);
-            
-            if (workStatusUpdated) {
-                showSuccess(employeeName, employeeId, operatorInfo, deviceInfo, '（通过备用方案）');
-            } else {
-                showSuccess(employeeName, employeeId, operatorInfo, deviceInfo, '（扫码记录成功，工作状态更新失败）');
-            }
+            showDebug('errorDebug', '备用方案成功！扫码记录已保存。');
+            showSuccess(employeeName, employeeId, operatorInfo, deviceInfo, '（通过备用方案）');
             return true;
         } else {
             const errorText = await response.text();
@@ -260,19 +252,6 @@ async function fallbackToRestAPI(employeeId, employeeName, operatorInfo, deviceI
         }
     } catch (error) {
         showDebug('errorDebug', '备用方案失败: ' + error.message);
-        return false;
-    }
-}
-
-// 备用方案更新工作状态
-async function updateWorkStatusFallback(employeeId, employeeName, operatorInfo, deviceInfo) {
-    try {
-        // 这里实现备用方案的工作状态更新逻辑
-        // 由于备用方案比较复杂，这里简单记录到扫码记录中
-        showDebug('errorDebug', '备用方案：工作状态更新暂不可用');
-        return true;
-    } catch (error) {
-        console.error('备用方案工作状态更新失败:', error);
         return false;
     }
 }
@@ -436,7 +415,7 @@ async function recordAttendance(employeeId, employeeName, operatorInfo, deviceIn
 
         showDebug('loadingDebug', '2. 更新工作状态...');
         
-        // 2. 更新工作状态（这是关键！）
+        // 2. 更新工作状态
         const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName, operatorInfo, deviceInfo);
         
         if (workStatusResult.success) {
@@ -453,7 +432,7 @@ async function recordAttendance(employeeId, employeeName, operatorInfo, deviceIn
     }
 }
 
-// 更新工作状态 - 核心逻辑
+// 更新工作状态 - 修复JSON错误
 async function updateWorkStatus(supabase, employeeId, employeeName, operatorInfo, deviceInfo) {
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
@@ -463,10 +442,9 @@ async function updateWorkStatus(supabase, employeeId, employeeName, operatorInfo
             .from('work_records')
             .select('*')
             .eq('employee_id', employeeId)
-            .single();
+            .maybeSingle(); // 使用 maybeSingle 而不是 single
 
-        // 如果记录不存在，不算错误，我们创建新记录
-        if (fetchError && !fetchError.message.includes('不存在')) {
+        if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 表示没有找到记录
             throw fetchError;
         }
 
@@ -484,6 +462,15 @@ async function updateWorkStatus(supabase, employeeId, employeeName, operatorInfo
             const workTimeHours = (new Date() - startTime) / (1000 * 60 * 60);
             const newTotalHours = (parseFloat(currentRecord.total_hours) || 0) + workTimeHours;
             
+            // 创建新的历史记录
+            const newHistory = currentRecord.history || [];
+            newHistory.push({
+                action: `微信扫码下工 - 操作员: ${operatorInfo.name} - 工作时长: ${workTimeHours.toFixed(2)}小时`,
+                timestamp: now,
+                operator: operatorInfo.name,
+                device_info: deviceInfo
+            });
+            
             // 更新记录：暂停工作
             newRecord = {
                 employee_id: employeeId,
@@ -493,21 +480,22 @@ async function updateWorkStatus(supabase, employeeId, employeeName, operatorInfo
                 last_updated: now,
                 operator_id: operatorInfo.id,
                 operator_name: operatorInfo.name,
-                history: [
-                    ...(currentRecord.history || []),
-                    {
-                        action: `微信扫码下工 - 操作员: ${operatorInfo.name} - 工作时长: ${workTimeHours.toFixed(2)}小时`,
-                        timestamp: now,
-                        operator: operatorInfo.name,
-                        device_info: deviceInfo
-                    }
-                ]
+                history: newHistory
             };
             
         } else {
             // 情况2：员工未工作或记录不存在 → 开始工作
             showDebug('loadingDebug', '员工未工作，执行上工操作...');
             action = '上工';
+            
+            // 创建新的历史记录
+            const newHistory = currentRecord?.history || [];
+            newHistory.push({
+                action: `微信扫码上工 - 操作员: ${operatorInfo.name}`,
+                timestamp: now,
+                operator: operatorInfo.name,
+                device_info: deviceInfo
+            });
             
             // 创建或更新记录：开始工作
             newRecord = {
@@ -518,27 +506,28 @@ async function updateWorkStatus(supabase, employeeId, employeeName, operatorInfo
                 last_updated: now,
                 operator_id: operatorInfo.id,
                 operator_name: operatorInfo.name,
-                history: [
-                    ...(currentRecord?.history || []),
-                    {
-                        action: `微信扫码上工 - 操作员: ${operatorInfo.name}`,
-                        timestamp: now,
-                        operator: operatorInfo.name,
-                        device_info: deviceInfo
-                    }
-                ]
+                history: newHistory
             };
         }
 
         showDebug('loadingDebug', `执行${action}操作，更新数据...`);
         
-        // 插入或更新工作记录
+        // 使用 insert 而不是 upsert，避免 JSON 错误
+        // 先尝试删除现有记录
+        const { error: deleteError } = await supabase
+            .from('work_records')
+            .delete()
+            .eq('employee_id', employeeId);
+
+        if (deleteError) {
+            showDebug('errorDebug', '删除旧记录失败: ' + deleteError.message);
+            // 继续尝试插入新记录
+        }
+        
+        // 插入新记录
         const { data: workData, error: workError } = await supabase
             .from('work_records')
-            .upsert(newRecord, { 
-                onConflict: 'employee_id',
-                ignoreDuplicates: false 
-            })
+            .insert([newRecord])
             .select();
 
         if (workError) {
