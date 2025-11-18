@@ -664,11 +664,66 @@
 
     <script>
         // 扫描者身份管理类
-        class ScannerIdentityManager {
-            constructor() {
-                this.engineers = JSON.parse(localStorage.getItem('engineers')) || {};
-                this.currentScannerId = this.generateBrowserFingerprint();
+class ScannerIdentityManager {
+    constructor() {
+        this.supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
+        this.supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
+        this.supabase = supabase.createClient(this.supabaseUrl, this.supabaseKey);
+        this.currentScannerId = this.generateBrowserFingerprint();
+        this.engineers = {};
+        this.loadEngineers();
+    }
+    
+    // 从云端加载工程师信息
+    async loadEngineers() {
+        try {
+            const { data, error } = await this.supabase
+                .from('engineers')
+                .select('*');
+                
+            if (!error && data) {
+                data.forEach(engineer => {
+                    this.engineers[engineer.identity] = engineer.name;
+                });
             }
+        } catch (error) {
+            console.warn('加载工程师信息失败:', error);
+        }
+    }
+    
+    // 注册当前设备为工程师（保存到云端）
+    async registerCurrentDevice(engineerName) {
+        if (!engineerName || engineerName.trim() === '') {
+            return { success: false, message: '请输入工程师姓名' };
+        }
+        
+        try {
+            const { data, error } = await this.supabase
+                .from('engineers')
+                .upsert({
+                    identity: this.currentScannerId,
+                    name: engineerName.trim(),
+                    role: 'engineer'
+                }, { onConflict: 'identity' })
+                .select();
+                
+            if (error) throw error;
+            
+            this.engineers[this.currentScannerId] = engineerName.trim();
+            
+            return { 
+                success: true, 
+                message: `设备已注册为工程师: ${engineerName}`,
+                scanner: this.getCurrentScanner()
+            };
+        } catch (error) {
+            console.error('注册工程师失败:', error);
+            return { 
+                success: false, 
+                message: '注册失败，请检查网络连接' 
+            };
+        }
+    }
             
             // 生成浏览器指纹
             generateBrowserFingerprint() {
