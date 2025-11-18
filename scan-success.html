@@ -149,14 +149,21 @@ async function fallbackToRestAPI(employeeId, employeeName) {
 }
 
 // 显示成功页面
-function showSuccess(name, id, extraInfo = '') {
+function showSuccess(name, id, action = '') {
     document.getElementById('loadingState').style.display = 'none';
     document.getElementById('errorState').style.display = 'none';
     document.getElementById('successState').style.display = 'block';
     
     document.getElementById('successName').textContent = name;
     document.getElementById('successId').textContent = `工号: ${id}`;
-    document.getElementById('successTime').textContent = `时间: ${new Date().toLocaleString('zh-CN')} ${extraInfo}`;
+    
+    // 显示具体的操作结果
+    if (action) {
+        document.getElementById('successTime').textContent = `${action}成功 - 时间: ${new Date().toLocaleString('zh-CN')}`;
+    } else {
+        document.getElementById('successTime').textContent = `时间: ${new Date().toLocaleString('zh-CN')}`;
+    }
+    
     document.getElementById('closeInfo').textContent = '本页面将自动关闭';
     
     setTimeout(() => {
@@ -399,4 +406,5 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 </body>
 </html>
+
 
