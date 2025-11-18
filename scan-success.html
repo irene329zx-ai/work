@@ -44,6 +44,10 @@
             color: white;
         }
         
+        .error-icon {
+            background: #e74c3c;
+        }
+        
         h1 {
             color: #333;
             margin-bottom: 15px;
@@ -99,6 +103,18 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        
+        .debug-info {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+            padding: 10px;
+            margin-top: 15px;
+            font-size: 12px;
+            text-align: left;
+            color: #6c757d;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -117,20 +133,25 @@
             </div>
             <div class="scan-time" id="scanTime"></div>
             <div class="auto-close" id="autoCloseInfo"></div>
+            <div class="debug-info" id="debugInfo"></div>
         </div>
         
         <div id="errorContent" style="display: none;">
-            <div class="success-icon" style="background: #e74c3c;">✗</div>
+            <div class="success-icon error-icon">✗</div>
             <h1>考勤失败</h1>
             <p id="errorMessage">系统错误，请重试</p>
+            <button onclick="retry()" style="margin-top: 15px; padding: 8px 16px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;">重试</button>
+            <div class="debug-info" id="errorDebugInfo"></div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-        // Supabase配置 - 使用你现有的配置
+        // Supabase配置
         const supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
+        
+        // 初始化Supabase客户端
         const supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
         // 从URL参数获取员工信息
@@ -138,7 +159,7 @@
         const employeeId = urlParams.get('id');
         const employeeName = urlParams.get('name') || '未知员工';
 
-        // 显示元素
+        // DOM元素
         const loadingEl = document.getElementById('loading');
         const successContentEl = document.getElementById('successContent');
         const errorContentEl = document.getElementById('errorContent');
@@ -147,98 +168,167 @@
         const scanTimeEl = document.getElementById('scanTime');
         const autoCloseInfoEl = document.getElementById('autoCloseInfo');
         const errorMessageEl = document.getElementById('errorMessage');
+        const debugInfoEl = document.getElementById('debugInfo');
+        const errorDebugInfoEl = document.getElementById('errorDebugInfo');
 
         // 显示加载状态
         loadingEl.style.display = 'block';
+        
+        // 添加调试信息
+        function addDebugInfo(message) {
+            console.log('DEBUG:', message);
+            const timestamp = new Date().toLocaleTimeString();
+            if (debugInfoEl.style.display !== 'none') {
+                debugInfoEl.innerHTML += `\n[${timestamp}] ${message}`;
+            }
+            if (errorDebugInfoEl.style.display !== 'none') {
+                errorDebugInfoEl.innerHTML += `\n[${timestamp}] ${message}`;
+            }
+        }
 
         async function recordAttendance() {
+            addDebugInfo('开始记录考勤流程');
+            addDebugInfo(`员工ID: ${employeeId}, 姓名: ${employeeName}`);
+
             if (!employeeId) {
                 showError('无效的二维码：缺少员工信息');
                 return;
             }
 
             try {
-                // 1. 记录到扫码记录表
-                const { data: scanData, error: scanError } = await supabase
+                // 1. 首先检查Supabase连接
+                addDebugInfo('检查Supabase连接...');
+                const { data: testData, error: testError } = await supabase
                     .from('wechat_scans')
-                    .insert([{ 
-                        employee_id: employeeId,
-                        user_agent: navigator.userAgent,
-                        scan_time: new Date().toISOString()
-                    }])
+                    .select('count')
+                    .limit(1);
+                
+                if (testError) {
+                    addDebugInfo('Supabase连接失败: ' + testError.message);
+                    throw new Error('数据库连接失败: ' + testError.message);
+                }
+                addDebugInfo('Supabase连接成功');
+
+                // 2. 记录到扫码记录表
+                addDebugInfo('插入扫码记录...');
+                const scanData = {
+                    employee_id: employeeId,
+                    user_agent: navigator.userAgent,
+                    scan_time: new Date().toISOString()
+                };
+                
+                addDebugInfo('插入数据: ' + JSON.stringify(scanData));
+                
+                const { data: scanResult, error: scanError } = await supabase
+                    .from('wechat_scans')
+                    .insert([scanData])
                     .select();
 
-                if (scanError) throw scanError;
+                if (scanError) {
+                    addDebugInfo('插入扫码记录失败: ' + scanError.message);
+                    throw new Error('记录扫码失败: ' + scanError.message);
+                }
+                
+                addDebugInfo('扫码记录插入成功: ' + JSON.stringify(scanResult));
 
-                // 2. 智能切换工作状态（复制你主站点的逻辑）
-                await toggleWorkStatus(employeeId);
+                // 3. 智能切换工作状态
+                addDebugInfo('开始切换工作状态...');
+                const statusResult = await toggleWorkStatus(employeeId);
+                addDebugInfo(`工作状态切换结果: ${statusResult}`);
 
-                // 3. 显示成功界面
+                // 4. 显示成功界面
                 showSuccess();
 
             } catch (error) {
                 console.error('记录考勤失败:', error);
-                showError('系统繁忙，请稍后重试');
+                addDebugInfo('最终错误: ' + error.message);
+                showError(error.message || '系统繁忙，请稍后重试');
             }
         }
 
-        // 智能切换工作状态（从你的主站点复制这个函数）
+        // 智能切换工作状态
         async function toggleWorkStatus(employeeId) {
             try {
+                addDebugInfo('获取现有工作记录...');
+                
                 // 先获取现有的工作记录
                 const { data: existingRecords, error: fetchError } = await supabase
                     .from('work_records')
                     .select('*')
                     .eq('employee_id', employeeId);
                 
-                if (fetchError && !fetchError.message.includes('不存在')) {
-                    throw fetchError;
+                if (fetchError) {
+                    addDebugInfo('获取工作记录失败: ' + fetchError.message);
+                    // 如果表不存在，我们继续创建新记录
+                    if (!fetchError.message.includes('不存在')) {
+                        throw fetchError;
+                    }
                 }
-
+                
                 const existingRecord = existingRecords && existingRecords[0];
                 const now = new Date().toISOString();
+                
+                addDebugInfo(`现有记录: ${existingRecord ? JSON.stringify(existingRecord) : '无'}`);
 
                 if (existingRecord && existingRecord.is_working) {
                     // 如果正在工作，则暂停工作
+                    addDebugInfo('员工正在工作，执行暂停操作...');
                     const startTime = new Date(existingRecord.start_time);
                     const workTimeHours = (new Date() - startTime) / (1000 * 60 * 60);
-                    const newTotalHours = (existingRecord.total_hours || 0) + workTimeHours;
+                    const newTotalHours = (parseFloat(existingRecord.total_hours) || 0) + workTimeHours;
+
+                    const updateData = {
+                        is_working: false,
+                        start_time: null,
+                        total_hours: newTotalHours,
+                        last_updated: now
+                    };
+                    
+                    addDebugInfo('更新数据: ' + JSON.stringify(updateData));
 
                     const { error: updateError } = await supabase
                         .from('work_records')
-                        .update({
-                            is_working: false,
-                            start_time: null,
-                            total_hours: newTotalHours,
-                            last_updated: now
-                        })
+                        .update(updateData)
                         .eq('employee_id', employeeId);
 
-                    if (updateError) throw updateError;
+                    if (updateError) {
+                        addDebugInfo('更新工作记录失败: ' + updateError.message);
+                        throw updateError;
+                    }
+                    
+                    addDebugInfo(`工作暂停成功，本次工作时长: ${workTimeHours.toFixed(2)}小时`);
+                    return `pause:${workTimeHours.toFixed(2)}`;
 
                 } else {
                     // 如果未工作，则开始工作
+                    addDebugInfo('员工未工作，执行开始操作...');
                     const recordData = {
                         employee_id: employeeId,
                         is_working: true,
                         start_time: now,
-                        total_hours: existingRecord ? existingRecord.total_hours : 0,
+                        total_hours: existingRecord ? parseFloat(existingRecord.total_hours) : 0,
                         last_updated: now
                     };
+                    
+                    addDebugInfo('插入/更新数据: ' + JSON.stringify(recordData));
 
                     const { error: upsertError } = await supabase
                         .from('work_records')
                         .upsert(recordData, { onConflict: 'employee_id' });
 
-                    if (upsertError) throw upsertError;
+                    if (upsertError) {
+                        addDebugInfo('插入工作记录失败: ' + upsertError.message);
+                        throw upsertError;
+                    }
+                    
+                    addDebugInfo('工作开始成功');
+                    return 'start';
                 }
 
-                return true;
-
             } catch (error) {
-                console.error('切换工作状态失败:', error);
+                addDebugInfo('切换工作状态失败: ' + error.message);
                 // 这里不抛出错误，因为扫码记录已经成功，只是状态切换失败
-                return false;
+                return 'error:' + error.message;
             }
         }
 
@@ -257,13 +347,15 @@
             // 自动关闭提示
             autoCloseInfoEl.textContent = '本页面将在3秒后自动关闭';
             
+            // 显示调试信息（开发时可用）
+            debugInfoEl.style.display = 'block';
+            debugInfoEl.textContent = '调试信息已记录到控制台';
+            
             // 3秒后尝试关闭窗口
             setTimeout(() => {
                 try {
-                    // 尝试关闭窗口（在微信中可能无效，但尝试一下）
                     window.close();
                 } catch (e) {
-                    // 如果无法关闭，显示提示
                     autoCloseInfoEl.textContent = '您可以手动关闭此页面';
                 }
             }, 3000);
@@ -273,10 +365,21 @@
             loadingEl.style.display = 'none';
             errorContentEl.style.display = 'block';
             errorMessageEl.textContent = message;
+            errorDebugInfoEl.style.display = 'block';
+            errorDebugInfoEl.textContent = '详细错误信息请查看浏览器控制台 (F12)';
+        }
+
+        function retry() {
+            loadingEl.style.display = 'block';
+            errorContentEl.style.display = 'none';
+            recordAttendance();
         }
 
         // 页面加载完成后开始记录
-        document.addEventListener('DOMContentLoaded', recordAttendance);
+        document.addEventListener('DOMContentLoaded', function() {
+            addDebugInfo('页面加载完成，开始记录考勤');
+            recordAttendance();
+        });
     </script>
 </body>
 </html>
