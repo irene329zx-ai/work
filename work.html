@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>员工工时管理系统</title>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.0/build/qrcode.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
     <style>
@@ -184,22 +183,6 @@
             margin-top: 15px;
         }
         
-        .camera-container {
-            position: relative;
-            margin-top: 20px;
-            overflow: hidden;
-            border-radius: 5px;
-        }
-        
-        #video {
-            width: 100%;
-            background-color: #000;
-        }
-        
-        #canvas {
-            display: none;
-        }
-        
         .employee-list {
             margin-top: 20px;
         }
@@ -338,31 +321,6 @@
             color: #7f8c8d;
         }
         
-        .scan-result {
-            margin-top: 15px;
-            padding: 15px;
-            background-color: #f8f9fa;
-            border-radius: 5px;
-            text-align: center;
-        }
-        
-        .scan-result h3 {
-            margin-bottom: 10px;
-            color: #2c3e50;
-        }
-        
-        .data-management {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #f8f9fa;
-            border-radius: 5px;
-        }
-        
-        .data-management h3 {
-            margin-bottom: 15px;
-            color: #2c3e50;
-        }
-        
         .stats-container {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -416,17 +374,6 @@
             color: #3498db;
         }
         
-        textarea {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 14px;
-            resize: vertical;
-            min-height: 100px;
-            margin-bottom: 10px;
-        }
-
         .sync-status {
             display: inline-block;
             width: 10px;
@@ -449,23 +396,6 @@
             margin-top: 3px;
         }
         
-        .permission-steps {
-            margin: 15px 0;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 5px;
-        }
-
-        .permission-steps h3 {
-            color: #2c3e50;
-            margin: 10px 0 5px 0;
-        }
-
-        .permission-steps p {
-            margin: 2px 0;
-            font-size: 14px;
-        }
-
         /* 新增：微信扫码记录样式 */
         .wechat-scan-item {
             padding: 8px 12px;
@@ -484,19 +414,53 @@
         .recent-activity {
             margin-top: 15px;
         }
+        
+        /* 新增：员工二维码显示样式 */
+        .employee-qr-section {
+            margin-top: 20px;
+            text-align: center;
+            padding: 15px;
+            border-top: 1px solid #eee;
+        }
+        
+        .employee-qr-title {
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+        
+        .employee-qr-code {
+            margin: 10px auto;
+        }
+        
+        .work-time-details {
+            display: flex;
+            gap: 15px;
+            margin-top: 5px;
+        }
+        
+        .work-time-item {
+            font-size: 13px;
+            color: #2c3e50;
+        }
+        
+        .work-time-label {
+            font-weight: 600;
+            color: #7f8c8d;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>员工工时管理系统 <span id="syncStatusIndicator" class="sync-status status-offline"></span></h1>
-            <p class="subtitle">员工信息录入 · 二维码考勤 · 工时记录 · 云端同步</p>
+            <p class="subtitle">员工信息录入 · 微信扫码考勤 · 工时记录 · 云端同步</p>
         </header>
         
         <div class="tab-container">
             <div class="tab active" data-tab="employee-tab">员工录入</div>
             <div class="tab" data-tab="admin-tab">后台管理</div>
-            <div class="tab" data-tab="data-tab">数据管理</div>
+            <div class="tab" data-tab="data-tab">云端管理</div>
         </div>
         
         <!-- 员工录入页面 -->
@@ -551,7 +515,7 @@
                         </div>
                     </div>
 
-                    <!-- 新增：微信扫码记录 -->
+                    <!-- 微信扫码记录 -->
                     <div class="card">
                         <h2>最近微信扫码记录</h2>
                         <div class="recent-activity" id="wechatScansList">
@@ -561,48 +525,6 @@
                 </div>
                 
                 <div class="right-column">
-                    <div class="card" id="permissionGuide" style="display: none;">
-                        <h2>摄像头权限设置指南</h2>
-                        <div class="permission-steps">
-                            <h3>iOS Safari:</h3>
-                            <p>1. 点击地址栏左边的"🔒"图标</p>
-                            <p>2. 选择"网站设置"</p>
-                            <p>3. 允许"摄像头"权限</p>
-                            
-                            <h3>Android Chrome:</h3>
-                            <p>1. 点击右上角"..."菜单</p>
-                            <p>2. 选择"网站设置"</p>
-                            <p>3. 允许"摄像头"权限</p>
-                            
-                            <h3>通用方法:</h3>
-                            <p>1. 刷新页面</p>
-                            <p>2. 当出现权限弹窗时选择"允许"</p>
-                        </div>
-                        <button onclick="hidePermissionGuide()">我知道了</button>
-                    </div>
-                    
-                    <div class="card">
-                        <h2>扫码考勤</h2>
-                        <div class="action-buttons">
-                            <button id="startCamera">开启摄像头</button>
-                            <button id="stopCamera" class="danger">关闭摄像头</button>
-                        </div>
-                        
-                        <div class="camera-container">
-                            <video id="video" autoplay playsinline></video>
-                            <canvas id="canvas"></canvas>
-                        </div>
-                        
-                        <div class="scan-result" id="scanResult">
-                            <h3>扫描结果</h3>
-                            <p id="scanResultText">等待扫描...</p>
-                        </div>
-                        
-                        <div class="logs-container" id="scanLogs">
-                            <!-- 扫描日志将通过JavaScript动态生成 -->
-                        </div>
-                    </div>
-                    
                     <div class="card">
                         <h2>工时管理</h2>
                         <div class="form-group">
@@ -622,6 +544,13 @@
                             今日总工时: <span id="totalHours">0</span> 小时
                         </div>
                         
+                        <!-- 新增：员工二维码显示区域 -->
+                        <div class="employee-qr-section" id="employeeQrSection" style="display: none;">
+                            <div class="employee-qr-title">员工二维码</div>
+                            <div id="employeeQrCode" class="employee-qr-code"></div>
+                            <div id="employeeQrInfo" class="employee-info"></div>
+                        </div>
+                        
                         <div class="work-history" id="workHistory">
                             <!-- 工作历史记录将通过JavaScript动态生成 -->
                         </div>
@@ -630,34 +559,18 @@
             </div>
         </div>
         
-        <!-- 数据管理页面 -->
+        <!-- 云端管理页面 -->
         <div id="data-tab" class="tab-content">
             <div class="main-content">
                 <div class="left-column">
                     <div class="card">
-                        <h2>数据备份</h2>
-                        <div class="data-management">
-                            <p>将系统数据导出为JSON文件，可用于备份或迁移数据。</p>
-                            <div class="action-buttons">
-                                <button id="exportData" class="secondary">导出数据</button>
-                                <button id="syncToCloud" class="secondary">同步到云端</button>
-                            </div>
+                        <h2>云端同步</h2>
+                        <div class="action-buttons">
+                            <button id="syncToCloud" class="secondary">同步到云端</button>
+                            <button id="syncFromCloud">从云端同步</button>
                         </div>
-                    </div>
-                    
-                    <div class="card">
-                        <h2>数据恢复</h2>
-                        <div class="data-management">
-                            <p>从JSON文件导入数据，恢复系统状态。</p>
-                            <div class="form-group">
-                                <label for="importData">导入数据 (JSON格式)</label>
-                                <textarea id="importData" placeholder="请粘贴JSON数据..."></textarea>
-                            </div>
-                            <div class="action-buttons">
-                                <button id="importDataBtn">导入数据</button>
-                                <button id="syncFromCloud">从云端同步</button>
-                                <button id="clearAllData" class="danger">清空所有数据</button>
-                            </div>
+                        <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 5px;">
+                            <p style="font-size: 14px; color: #7f8c8d;">云端同步状态: <span id="cloudStatusText">未连接</span></p>
                         </div>
                     </div>
                 </div>
@@ -731,6 +644,13 @@
                     indicator.className = `sync-status ${this.isOnline ? 'status-online' : 'status-offline'}`;
                     indicator.title = this.isOnline ? '云端连接正常' : '云端连接断开';
                 }
+                
+                // 更新云端状态文本
+                const statusText = document.getElementById('cloudStatusText');
+                if (statusText) {
+                    statusText.textContent = this.isOnline ? '已连接' : '未连接';
+                    statusText.style.color = this.isOnline ? '#27ae60' : '#e74c3c';
+                }
             }
 
             // 同步所有数据
@@ -760,9 +680,11 @@
                         records.forEach(record => {
                             workRecords[record.employee_id] = {
                                 totalHours: record.total_hours || 0,
+                                todayHours: record.today_hours || 0,
                                 isWorking: record.is_working || false,
                                 startTime: record.start_time ? new Date(record.start_time).getTime() : null,
-                                history: record.history || []
+                                history: record.history || [],
+                                lastUpdated: record.last_updated || new Date().toISOString()
                             };
                         });
                         localStorage.setItem('workRecords', JSON.stringify(workRecords));
@@ -810,6 +732,7 @@
                         records.push({
                             employee_id: employeeId,
                             total_hours: parseFloat(record.totalHours || 0),
+                            today_hours: parseFloat(record.todayHours || 0),
                             is_working: record.isWorking || false,
                             start_time: record.startTime ? new Date(record.startTime).toISOString() : null,
                             history: record.history || [],
@@ -887,10 +810,8 @@
         let employees = JSON.parse(localStorage.getItem('employees')) || [];
         let workRecords = JSON.parse(localStorage.getItem('workRecords')) || {};
         let systemLogs = JSON.parse(localStorage.getItem('systemLogs')) || [];
-        let videoStream = null;
         let currentEmployeeId = null;
-        let isScanning = false;
-        let lastWechatScanCheck = 0; // 新增：记录上次检查微信扫码的时间
+        let lastWechatScanCheck = 0;
         
         // DOM元素
         const employeeNameInput = document.getElementById('employeeName');
@@ -900,24 +821,14 @@
         const qrCodeContainer = document.getElementById('qrcode');
         const qrPlaceholder = document.getElementById('qrPlaceholder');
         const employeeList = document.getElementById('employeeList');
-        const startCameraBtn = document.getElementById('startCamera');
-        const stopCameraBtn = document.getElementById('stopCamera');
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const scanLogs = document.getElementById('scanLogs');
         const selectedEmployeeSelect = document.getElementById('selectedEmployee');
         const startWorkBtn = document.getElementById('startWork');
         const pauseWorkBtn = document.getElementById('pauseWork');
         const saveWorkBtn = document.getElementById('saveWork');
         const totalHoursSpan = document.getElementById('totalHours');
         const notification = document.getElementById('notification');
-        const scanResultText = document.getElementById('scanResultText');
         const tabs = document.querySelectorAll('.tab');
         const tabContents = document.querySelectorAll('.tab-content');
-        const exportDataBtn = document.getElementById('exportData');
-        const importDataBtn = document.getElementById('importDataBtn');
-        const importDataTextarea = document.getElementById('importData');
-        const clearAllDataBtn = document.getElementById('clearAllData');
         const totalEmployeesSpan = document.getElementById('totalEmployees');
         const workingEmployeesSpan = document.getElementById('workingEmployees');
         const workRankingList = document.getElementById('workRanking');
@@ -929,7 +840,10 @@
         const statActiveEmployees = document.getElementById('statActiveEmployees');
         const syncToCloudBtn = document.getElementById('syncToCloud');
         const syncFromCloudBtn = document.getElementById('syncFromCloud');
-        const wechatScansList = document.getElementById('wechatScansList'); // 新增：微信扫码记录列表
+        const wechatScansList = document.getElementById('wechatScansList');
+        const employeeQrSection = document.getElementById('employeeQrSection');
+        const employeeQrCode = document.getElementById('employeeQrCode');
+        const employeeQrInfo = document.getElementById('employeeQrInfo');
         
         // 时间格式化函数
         function formatDateTime(timestamp) {
@@ -967,140 +881,18 @@
             });
         }
 
-        // 权限引导函数
-        function showPermissionGuide() {
-            document.getElementById('permissionGuide').style.display = 'block';
+        // 获取今天的日期字符串（用于区分今日工时和总工时）
+        function getTodayDateString() {
+            const today = new Date();
+            return today.toISOString().split('T')[0]; // YYYY-MM-DD格式
         }
 
-        function hidePermissionGuide() {
-            document.getElementById('permissionGuide').style.display = 'none';
-        }
-
-        // 摄像头按钮重置
-        function resetCameraButton() {
-            startCameraBtn.disabled = false;
-            startCameraBtn.textContent = '开启摄像头';
-        }
-
-        // 开启摄像头（优化版）
-        function startCamera() {
-            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                // 显示加载状态
-                startCameraBtn.disabled = true;
-                startCameraBtn.textContent = '开启中...';
-                
-                // 多种摄像头配置尝试
-                const constraintsList = [
-                    {
-                        video: {
-                            facingMode: { exact: "environment" }, // 强制后置
-                            width: { ideal: 1280 },
-                            height: { ideal: 720 }
-                        }
-                    },
-                    {
-                        video: {
-                            facingMode: "environment", // 优先后置
-                            width: { ideal: 1280 },
-                            height: { ideal: 720 }
-                        }
-                    },
-                    {
-                        video: {
-                            facingMode: "user", // 前置摄像头
-                            width: { ideal: 1280 },
-                            height: { ideal: 720 }
-                        }
-                    },
-                    {
-                        video: true // 默认配置
-                    }
-                ];
-                
-                const tryConstraints = async (index) => {
-                    if (index >= constraintsList.length) {
-                        showNotification('无法访问任何摄像头', 'error');
-                        resetCameraButton();
-                        return;
-                    }
-                    
-                    try {
-                        const stream = await navigator.mediaDevices.getUserMedia(constraintsList[index]);
-                        onCameraSuccess(stream);
-                    } catch (error) {
-                        console.log(`摄像头配置 ${index} 失败:`, error);
-                        if (index === constraintsList.length - 1) {
-                            onCameraError(error);
-                        } else {
-                            tryConstraints(index + 1);
-                        }
-                    }
-                };
-                
-                tryConstraints(0);
-                
-            } else {
-                showNotification('您的浏览器不支持摄像头功能', 'error');
-                resetCameraButton();
-            }
-        }
-
-        function onCameraSuccess(stream) {
-            videoStream = stream;
-            video.srcObject = stream;
-            
-            video.onloadedmetadata = function() {
-                video.play();
-                isScanning = true;
-                scanQRCode();
-                showNotification('摄像头已开启', 'success');
-                addSystemLog('开启摄像头扫描');
-                resetCameraButton();
-            };
-            
-            video.onerror = function() {
-                showNotification('视频播放错误', 'error');
-                resetCameraButton();
-            };
-        }
-
-        function onCameraError(error) {
-            console.error('摄像头访问错误:', error);
-            
-            let errorMessage = '无法访问摄像头';
-            switch(error.name) {
-                case 'NotAllowedError':
-                    errorMessage = '摄像头权限被拒绝';
-                    showPermissionGuide();
-                    break;
-                case 'NotFoundError':
-                    errorMessage = '未找到摄像头设备';
-                    break;
-                case 'NotSupportedError':
-                    errorMessage = '浏览器不支持摄像头功能';
-                    break;
-                case 'NotReadableError':
-                    errorMessage = '摄像头被其他应用占用';
-                    break;
-                default:
-                    errorMessage = `摄像头错误: ${error.message}`;
-            }
-            
-            showNotification(errorMessage, 'error');
-            resetCameraButton();
-        }
-        
-        // 关闭摄像头
-        function stopCamera() {
-            if (videoStream) {
-                videoStream.getTracks().forEach(track => track.stop());
-                videoStream = null;
-                video.srcObject = null;
-                isScanning = false;
-                
-                showNotification('摄像头已关闭', 'success');
-                addSystemLog('关闭摄像头');
-            }
+        // 判断时间戳是否是今天
+        function isToday(timestamp) {
+            if (!timestamp) return false;
+            const date = new Date(timestamp);
+            const today = new Date();
+            return date.toDateString() === today.toDateString();
         }
 
         // 初始化
@@ -1120,17 +912,13 @@
             updateTotalHours();
             updateStats();
             renderSystemLogs();
-            loadWechatScans(); // 新增：加载微信扫码记录
+            loadWechatScans();
             
             // 生成二维码按钮事件
             generateQRBtn.addEventListener('click', generateQRCode);
             
             // 清空表单按钮事件
             clearFormBtn.addEventListener('click', clearForm);
-            
-            // 摄像头控制按钮事件
-            startCameraBtn.addEventListener('click', startCamera);
-            stopCameraBtn.addEventListener('click', stopCamera);
             
             // 工时管理按钮事件
             startWorkBtn.addEventListener('click', startWork);
@@ -1142,15 +930,14 @@
                 currentEmployeeId = this.value;
                 if (currentEmployeeId) {
                     renderWorkHistory(currentEmployeeId);
+                    renderEmployeeQrCode(currentEmployeeId);
                 } else {
                     workHistoryList.innerHTML = '<div class="empty-state">请选择员工查看工作记录</div>';
+                    employeeQrSection.style.display = 'none';
                 }
             });
             
-            // 数据管理按钮事件
-            exportDataBtn.addEventListener('click', exportData);
-            importDataBtn.addEventListener('click', importData);
-            clearAllDataBtn.addEventListener('click', clearAllData);
+            // 云端同步按钮事件
             syncToCloudBtn.addEventListener('click', () => cloudSync.uploadAllData());
             syncFromCloudBtn.addEventListener('click', async () => {
                 await cloudSync.syncAllData();
@@ -1161,7 +948,7 @@
                 updateEmployeeSelect();
                 updateTotalHours();
                 updateStats();
-                loadWechatScans(); // 重新加载微信扫码记录
+                loadWechatScans();
             });
             
             // 标签页切换事件
@@ -1175,11 +962,6 @@
                     
                     tab.classList.add('active');
                     document.getElementById(tabId).classList.add('active');
-                    
-                    // 如果切换到员工录入页面，停止摄像头
-                    if (tabId === 'employee-tab' && videoStream) {
-                        stopCamera();
-                    }
                     
                     // 更新统计信息
                     if (tabId === 'data-tab') {
@@ -1197,7 +979,7 @@
             setInterval(() => {
                 renderEmployeeList();
                 updateTotalHours();
-                checkWechatScansAndUpdate(); // 新增：检查微信扫码更新
+                checkWechatScansAndUpdate();
             }, 2000);
             
             // 定时同步到云端（每2分钟）
@@ -1314,11 +1096,18 @@
                 const statusText = isWorking ? '工作中' : '未工作';
                 const startTime = workRecords[employee.id] ? workRecords[employee.id].startTime : null;
                 
+                // 计算今日工时和总工时
+                const todayHours = calculateTodayWorkTime(employee.id);
+                const totalHours = calculateTotalWorkTime(employee.id);
+                
                 employeeItem.innerHTML = `
                     <div class="employee-info">
                         <div class="employee-name">${employee.name}</div>
                         <div class="employee-id">工号: ${employee.id}</div>
-                        <div class="work-time">今日工时: ${calculateWorkTime(employee.id)} 小时</div>
+                        <div class="work-time-details">
+                            <div class="work-time-item"><span class="work-time-label">今日:</span> ${todayHours} 小时</div>
+                            <div class="work-time-item"><span class="work-time-label">总计:</span> ${totalHours} 小时</div>
+                        </div>
                         ${startTime ? `<div class="time-info">开始时间: ${formatDateTime(startTime)}</div>` : ''}
                     </div>
                     <div class="employee-actions">
@@ -1342,6 +1131,40 @@
             });
         }
         
+        // 计算员工今日工时
+        function calculateTodayWorkTime(employeeId) {
+            if (!workRecords[employeeId]) return 0;
+            
+            const record = workRecords[employeeId];
+            let todayHours = parseFloat(record.todayHours || 0);
+            
+            // 如果正在工作，加上当前工作时间
+            if (record.isWorking && record.startTime && isToday(record.startTime)) {
+                const currentWorkTime = (Date.now() - record.startTime) / (1000 * 60 * 60);
+                todayHours += currentWorkTime;
+            }
+            
+            // 保留2位小数
+            return todayHours.toFixed(2);
+        }
+        
+        // 计算员工总工时
+        function calculateTotalWorkTime(employeeId) {
+            if (!workRecords[employeeId]) return 0;
+            
+            const record = workRecords[employeeId];
+            let totalHours = parseFloat(record.totalHours || 0);
+            
+            // 如果正在工作，加上当前工作时间
+            if (record.isWorking && record.startTime) {
+                const currentWorkTime = (Date.now() - record.startTime) / (1000 * 60 * 60);
+                totalHours += currentWorkTime;
+            }
+            
+            // 保留2位小数
+            return totalHours.toFixed(2);
+        }
+        
         // 更新工时排行
         function updateWorkRanking() {
             workRankingList.innerHTML = '';
@@ -1351,11 +1174,11 @@
                 return;
             }
             
-            // 计算每个员工的工时并排序
+            // 计算每个员工的今日工时并排序
             const rankedEmployees = employees.map(emp => {
                 return {
                     ...emp,
-                    workTime: parseFloat(calculateWorkTime(emp.id))
+                    workTime: parseFloat(calculateTodayWorkTime(emp.id))
                 };
             }).sort((a, b) => b.workTime - a.workTime);
             
@@ -1391,6 +1214,7 @@
                 if (currentEmployeeId === employeeId) {
                     currentEmployeeId = null;
                     selectedEmployeeSelect.value = '';
+                    employeeQrSection.style.display = 'none';
                 }
                 
                 // 更新UI
@@ -1407,23 +1231,6 @@
             }
         }
         
-        // 计算员工工时
-        function calculateWorkTime(employeeId) {
-            if (!workRecords[employeeId]) return 0;
-            
-            const record = workRecords[employeeId];
-            let totalHours = parseFloat(record.totalHours || 0);
-            
-            // 如果正在工作，加上当前工作时间
-            if (record.isWorking && record.startTime) {
-                const currentWorkTime = (Date.now() - record.startTime) / (1000 * 60 * 60);
-                totalHours += currentWorkTime;
-            }
-            
-            // 保留2位小数
-            return totalHours.toFixed(2);
-        }
-        
         // 更新员工选择下拉框
         function updateEmployeeSelect() {
             selectedEmployeeSelect.innerHTML = '<option value="">-- 请选择员工 --</option>';
@@ -1434,127 +1241,6 @@
                 option.textContent = `${employee.name} (${employee.id})`;
                 selectedEmployeeSelect.appendChild(option);
             });
-        }
-        
-        // 扫描二维码
-        function scanQRCode() {
-            if (!isScanning) return;
-            
-            if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                const canvasContext = canvas.getContext('2d');
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                canvasContext.drawImage(video, 0, 0, canvas.width, canvas.height);
-                
-                const imageData = canvasContext.getImageData(0, 0, canvas.width, canvas.height);
-                const code = jsQR(imageData.data, imageData.width, imageData.height);
-                
-                if (code) {
-                    const employeeId = code.data;
-                    const employee = employees.find(emp => emp.id === employeeId);
-                    
-                    if (employee) {
-                        // 更新扫描结果
-                        scanResultText.textContent = `已识别: ${employee.name} (${employeeId})`;
-                        scanResultText.style.color = '#27ae60';
-                        
-                        // 记录扫描日志
-                        const now = new Date();
-                        const timeString = now.toLocaleTimeString();
-                        
-                        const logItem = document.createElement('div');
-                        logItem.className = 'log-item';
-                        logItem.innerHTML = `
-                            <div>${employee.name} (${employeeId})</div>
-                            <div class="log-time">${timeString}</div>
-                        `;
-                        
-                        scanLogs.insertBefore(logItem, scanLogs.firstChild);
-                        
-                        // 限制日志数量
-                        if (scanLogs.children.length > 10) {
-                            scanLogs.removeChild(scanLogs.lastChild);
-                        }
-                        
-                        // 自动选择该员工
-                        selectedEmployeeSelect.value = employeeId;
-                        currentEmployeeId = employeeId;
-                        
-                        // 智能切换工作状态：如果正在工作就暂停，如果未工作就开始
-                        toggleWorkStatus(employeeId);
-                        
-                        // 添加系统日志
-                        addSystemLog(`扫码识别员工: ${employee.name} (${employeeId})`);
-                        
-                        // 暂停扫描2秒，避免重复扫描
-                        isScanning = false;
-                        setTimeout(() => {
-                            isScanning = true;
-                            scanQRCode();
-                        }, 2000);
-                        
-                        return; // 退出当前扫描循环
-                    } else {
-                        scanResultText.textContent = '未找到匹配的员工信息';
-                        scanResultText.style.color = '#e74c3c';
-                    }
-                } else {
-                    scanResultText.textContent = '等待扫描...';
-                    scanResultText.style.color = '#7f8c8d';
-                }
-            }
-            
-            // 继续扫描
-            if (isScanning) {
-                requestAnimationFrame(scanQRCode);
-            }
-        }
-        
-        // 智能切换工作状态
-        function toggleWorkStatus(employeeId) {
-            // 初始化员工记录
-            if (!workRecords[employeeId]) {
-                workRecords[employeeId] = {
-                    totalHours: 0,
-                    isWorking: false,
-                    startTime: null,
-                    history: []
-                };
-            }
-            
-            const record = workRecords[employeeId];
-            const employee = employees.find(emp => emp.id === employeeId);
-            
-            if (record.isWorking) {
-                // 如果正在工作，则暂停工作
-                const workTimeHours = (Date.now() - record.startTime) / (1000 * 60 * 60);
-                record.totalHours = parseFloat(record.totalHours || 0) + workTimeHours;
-                record.isWorking = false;
-                record.startTime = null;
-                
-                showNotification(`${employee.name} 工作已暂停`, 'success');
-                addWorkHistory(employeeId, `扫码暂停工作 - 本次工作时长: ${workTimeHours.toFixed(2)}小时`);
-                addSystemLog(`员工 ${employee.name} 通过扫码暂停工作`);
-            } else {
-                // 如果未工作，则开始工作
-                record.isWorking = true;
-                record.startTime = Date.now();
-                
-                showNotification(`${employee.name} 工作计时已开始`, 'success');
-                addWorkHistory(employeeId, `扫码开始工作 - ${formatDateTime(Date.now())}`);
-                addSystemLog(`员工 ${employee.name} 通过扫码开始工作`);
-            }
-            
-            // 保存到本地存储
-            localStorage.setItem('workRecords', JSON.stringify(workRecords));
-            
-            // 更新UI
-            renderEmployeeList();
-            updateTotalHours();
-            renderWorkHistory(employeeId);
-            
-            // 同步到云端
-            cloudSync.uploadAllData();
         }
         
         // 开始工作
@@ -1570,6 +1256,7 @@
             if (!workRecords[employeeId]) {
                 workRecords[employeeId] = {
                     totalHours: 0,
+                    todayHours: 0,
                     isWorking: false,
                     startTime: null,
                     history: []
@@ -1631,7 +1318,15 @@
             
             // 计算工作时间并暂停
             const workTimeHours = (Date.now() - record.startTime) / (1000 * 60 * 60);
+            
+            // 更新工时记录
             record.totalHours = parseFloat(record.totalHours || 0) + workTimeHours;
+            
+            // 如果是今天的工作，更新今日工时
+            if (isToday(record.startTime)) {
+                record.todayHours = parseFloat(record.todayHours || 0) + workTimeHours;
+            }
+            
             record.isWorking = false;
             record.startTime = null;
             
@@ -1733,12 +1428,48 @@
             });
         }
         
+        // 渲染员工二维码
+        function renderEmployeeQrCode(employeeId) {
+            const employee = employees.find(emp => emp.id === employeeId);
+            if (!employee) return;
+            
+            // 显示二维码区域
+            employeeQrSection.style.display = 'block';
+            
+            // 清空之前的二维码
+            employeeQrCode.innerHTML = '';
+            
+            // 生成微信可扫描的二维码URL
+            const successPageUrl = `https://irene329zx-ai.github.io/work/scan-success.html?id=${encodeURIComponent(employeeId)}&name=${encodeURIComponent(employee.name)}`;
+            
+            // 生成二维码
+            QRCode.toCanvas(employeeQrCode, successPageUrl, {
+                width: 150,
+                margin: 1,
+                color: {
+                    dark: '#000000',
+                    light: '#FFFFFF'
+                }
+            }, function(error) {
+                if (error) {
+                    console.error('生成员工二维码失败:', error);
+                    employeeQrCode.innerHTML = '<p style="color: #e74c3c;">生成二维码失败</p>';
+                }
+            });
+            
+            // 更新员工信息
+            employeeQrInfo.innerHTML = `
+                <div><strong>${employee.name}</strong> (${employeeId})</div>
+                <div style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">微信扫码考勤</div>
+            `;
+        }
+        
         // 更新总工时显示
         function updateTotalHours() {
             let total = 0;
             
             for (const employeeId in workRecords) {
-                total += parseFloat(calculateWorkTime(employeeId));
+                total += parseFloat(calculateTodayWorkTime(employeeId));
             }
             
             totalHoursSpan.textContent = total.toFixed(2);
@@ -1754,10 +1485,9 @@
             let todayHours = 0;
             let activeEmployees = 0;
             
-            const today = new Date().toDateString();
-            
             for (const employeeId in workRecords) {
-                totalHours += parseFloat(calculateWorkTime(employeeId));
+                totalHours += parseFloat(calculateTotalWorkTime(employeeId));
+                todayHours += parseFloat(calculateTodayWorkTime(employeeId));
                 
                 if (workRecords[employeeId].isWorking) {
                     activeEmployees++;
@@ -1765,112 +1495,8 @@
             }
             
             statTotalHours.textContent = totalHours.toFixed(2);
-            statTodayHours.textContent = totalHours.toFixed(2); // 简化处理，实际应按日期统计
+            statTodayHours.textContent = todayHours.toFixed(2);
             statActiveEmployees.textContent = activeEmployees;
-        }
-        
-        // 导出数据
-        function exportData() {
-            const data = {
-                employees: employees,
-                workRecords: workRecords,
-                exportDate: new Date().toISOString()
-            };
-            
-            const dataStr = JSON.stringify(data, null, 2);
-            const dataBlob = new Blob([dataStr], {type: 'application/json'});
-            
-            const url = URL.createObjectURL(dataBlob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `employee_work_data_${new Date().toISOString().split('T')[0]}.json`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-            
-            showNotification('数据导出成功', 'success');
-            addSystemLog('导出系统数据');
-        }
-        
-        // 导入数据
-        function importData() {
-            const dataStr = importDataTextarea.value.trim();
-            
-            if (!dataStr) {
-                showNotification('请输入要导入的数据', 'error');
-                return;
-            }
-            
-            try {
-                const data = JSON.parse(dataStr);
-                
-                if (!data.employees || !data.workRecords) {
-                    showNotification('数据格式不正确', 'error');
-                    return;
-                }
-                
-                // 确认操作
-                if (!confirm('导入数据将覆盖当前所有数据，确定要继续吗？')) {
-                    return;
-                }
-                
-                // 更新数据
-                employees = data.employees;
-                workRecords = data.workRecords;
-                
-                // 保存到localStorage
-                localStorage.setItem('employees', JSON.stringify(employees));
-                localStorage.setItem('workRecords', JSON.stringify(workRecords));
-                
-                // 更新UI
-                renderEmployeeList();
-                updateEmployeeSelect();
-                updateTotalHours();
-                updateStats();
-                
-                showNotification('数据导入成功', 'success');
-                addSystemLog('导入系统数据');
-                
-                // 同步到云端
-                cloudSync.uploadAllData();
-                
-                // 清空输入框
-                importDataTextarea.value = '';
-            } catch (error) {
-                console.error('导入数据错误:', error);
-                showNotification('数据格式不正确，导入失败', 'error');
-            }
-        }
-        
-        // 清空所有数据
-        function clearAllData() {
-            if (!confirm('确定要清空所有数据吗？此操作不可恢复！')) {
-                return;
-            }
-            
-            // 清空所有数据
-            employees = [];
-            workRecords = {};
-            systemLogs = [];
-            
-            // 清空localStorage
-            localStorage.removeItem('employees');
-            localStorage.removeItem('workRecords');
-            localStorage.removeItem('systemLogs');
-            
-            // 更新UI
-            renderEmployeeList();
-            updateEmployeeSelect();
-            updateTotalHours();
-            updateStats();
-            renderSystemLogs();
-            
-            showNotification('所有数据已清空', 'success');
-            addSystemLog('清空所有系统数据');
-            
-            // 从云端删除所有数据
-            cloudSync.uploadAllData(); // 这会用空数据覆盖云端
         }
         
         // 添加系统日志
@@ -1929,7 +1555,7 @@
             }, 3000);
         }
 
-        // ==================== 新增：微信扫码相关功能 ====================
+        // ==================== 微信扫码相关功能 ====================
 
         // 加载微信扫码记录
         async function loadWechatScans() {
@@ -1938,7 +1564,7 @@
                     .from('wechat_scans')
                     .select('*')
                     .order('scan_time', { ascending: false })
-                    .limit(10);
+                    .limit(5); // 只显示最近5条记录
 
                 if (error) {
                     console.error('加载微信扫码记录失败:', error);
@@ -2038,9 +1664,11 @@
                     records.forEach(record => {
                         newWorkRecords[record.employee_id] = {
                             totalHours: record.total_hours || 0,
+                            todayHours: record.today_hours || 0,
                             isWorking: record.is_working || false,
                             startTime: record.start_time ? new Date(record.start_time).getTime() : null,
-                            history: record.history || []
+                            history: record.history || [],
+                            lastUpdated: record.last_updated || new Date().toISOString()
                         };
                     });
                     
@@ -2051,7 +1679,6 @@
                 console.error('从云端同步工作记录失败:', error);
             }
         }
-
     </script>
 </body>
 </html>
