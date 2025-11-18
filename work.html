@@ -430,13 +430,29 @@
             font-weight: 600;
             color: #7f8c8d;
         }
+
+        .realtime-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #2ecc71;
+            margin-left: 5px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>员工工时管理系统 <span id="syncStatusIndicator" class="sync-status status-offline"></span></h1>
-            <p class="subtitle">员工信息录入 · 微信扫码考勤 · 工时记录 · 云端同步</p>
+            <p class="subtitle">员工信息录入 · 微信扫码考勤 · 工时记录 · 云端同步 <span id="realtimeIndicator" class="realtime-indicator" style="display: none;" title="实时同步已开启"></span></p>
         </header>
         
         <div class="tab-container">
@@ -543,9 +559,12 @@
                         <div class="action-buttons">
                             <button id="syncToCloud" class="secondary">同步到云端</button>
                             <button id="syncFromCloud">从云端同步</button>
+                            <button id="checkUpdates" class="secondary">检查云端更新</button>
+                            <button id="toggleRealtime">开启实时同步</button>
                         </div>
                         <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 5px;">
                             <p style="font-size: 14px; color: #7f8c8d;">云端同步状态: <span id="cloudStatusText">未连接</span></p>
+                            <p style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">实时同步: <span id="realtimeStatusText">未开启</span></p>
                         </div>
                     </div>
                 </div>
@@ -587,7 +606,7 @@
     <div class="notification" id="notification"></div>
 
     <script>
-        // Supabase云同步类
+        // Supabase云同步类 - 增强版（支持双向同步）
         class CloudSync {
             constructor() {
                 // 使用你提供的Supabase配置
@@ -595,6 +614,8 @@
                 this.supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
                 this.supabase = supabase.createClient(this.supabaseUrl, this.supabaseKey);
                 this.isOnline = false;
+                this.isRealtimeEnabled = false;
+                this.realtimeSubscriptions = [];
             }
 
             // 检查网络状态
@@ -626,6 +647,253 @@
                     statusText.textContent = this.isOnline ? '已连接' : '未连接';
                     statusText.style.color = this.isOnline ? '#27ae60' : '#e74c3c';
                 }
+
+                // 更新实时同步状态
+                const realtimeStatusText = document.getElementById('realtimeStatusText');
+                const realtimeIndicator = document.getElementById('realtimeIndicator');
+                if (realtimeStatusText && realtimeIndicator) {
+                    if (this.isRealtimeEnabled && this.isOnline) {
+                        realtimeStatusText.textContent = '已开启';
+                        realtimeStatusText.style.color = '#27ae60';
+                        realtimeIndicator.style.display = 'inline-block';
+                    } else {
+                        realtimeStatusText.textContent = this.isOnline ? '未开启' : '连接断开';
+                        realtimeStatusText.style.color = this.isOnline ? '#f39c12' : '#e74c3c';
+                        realtimeIndicator.style.display = 'none';
+                    }
+                }
+            }
+
+            // 开启实时同步
+            async enableRealtimeSync() {
+                if (!this.isOnline) {
+                    showNotification('请先确保云端连接正常', 'error');
+                    return false;
+                }
+
+                try {
+                    // 订阅 work_records 表的变化
+                    const workRecordsSubscription = this.supabase
+                        .channel('work-records-changes')
+                        .on(
+                            'postgres_changes',
+                            {
+                                event: '*', // INSERT, UPDATE, DELETE
+                                schema: 'public',
+                                table: 'work_records'
+                            },
+                            (payload) => {
+                                console.log('work_records 发生变化:', payload);
+                                this.handleWorkRecordsChange(payload);
+                            }
+                        )
+                        .subscribe((status) => {
+                            if (status === 'SUBSCRIBED') {
+                                console.log('实时订阅 work_records 已开启');
+                            }
+                        });
+
+                    // 订阅 employees 表的变化
+                    const employeesSubscription = this.supabase
+                        .channel('employees-changes')
+                        .on(
+                            'postgres_changes',
+                            {
+                                event: '*',
+                                schema: 'public',
+                                table: 'employees'
+                            },
+                            (payload) => {
+                                console.log('employees 发生变化:', payload);
+                                this.handleEmployeesChange(payload);
+                            }
+                        )
+                        .subscribe((status) => {
+                            if (status === 'SUBSCRIBED') {
+                                console.log('实时订阅 employees 已开启');
+                            }
+                        });
+
+                    // 订阅 wechat_scans 表的变化
+                    const wechatScansSubscription = this.supabase
+                        .channel('wechat-scans-changes')
+                        .on(
+                            'postgres_changes',
+                            {
+                                event: 'INSERT',
+                                schema: 'public',
+                                table: 'wechat_scans'
+                            },
+                            (payload) => {
+                                console.log('wechat_scans 新增记录:', payload);
+                                this.handleWechatScansChange(payload);
+                            }
+                        )
+                        .subscribe((status) => {
+                            if (status === 'SUBSCRIBED') {
+                                console.log('实时订阅 wechat_scans 已开启');
+                            }
+                        });
+
+                    this.realtimeSubscriptions = [
+                        workRecordsSubscription,
+                        employeesSubscription,
+                        wechatScansSubscription
+                    ];
+
+                    this.isRealtimeEnabled = true;
+                    this.updateStatusIndicator();
+                    showNotification('实时同步已开启', 'success');
+                    return true;
+
+                } catch (error) {
+                    console.error('开启实时同步失败:', error);
+                    showNotification('开启实时同步失败', 'error');
+                    return false;
+                }
+            }
+
+            // 关闭实时同步
+            disableRealtimeSync() {
+                this.realtimeSubscriptions.forEach(subscription => {
+                    if (subscription) {
+                        this.supabase.removeChannel(subscription);
+                    }
+                });
+                this.realtimeSubscriptions = [];
+                this.isRealtimeEnabled = false;
+                this.updateStatusIndicator();
+                showNotification('实时同步已关闭', 'success');
+            }
+
+            // 处理 work_records 变化
+            handleWorkRecordsChange(payload) {
+                const { eventType, new: newRecord, old: oldRecord } = payload;
+                
+                // 忽略本地触发的变更（通过时间戳判断）
+                const isLocalChange = newRecord && newRecord.last_updated && 
+                                    (Date.now() - new Date(newRecord.last_updated).getTime()) < 5000;
+                
+                if (isLocalChange) {
+                    console.log('忽略本地触发的变更');
+                    return;
+                }
+
+                switch (eventType) {
+                    case 'INSERT':
+                    case 'UPDATE':
+                        if (newRecord) {
+                            // 更新本地 workRecords
+                            const employeeId = newRecord.employee_id;
+                            const existingRecord = workRecords[employeeId];
+                            
+                            // 冲突解决：使用最新的时间戳
+                            if (!existingRecord || 
+                                !existingRecord.lastUpdated || 
+                                new Date(newRecord.last_updated) > new Date(existingRecord.lastUpdated)) {
+                                
+                                workRecords[employeeId] = {
+                                    totalHours: newRecord.total_hours || 0,
+                                    todayHours: newRecord.today_hours || 0,
+                                    isWorking: newRecord.is_working || false,
+                                    startTime: newRecord.start_time ? new Date(newRecord.start_time).getTime() : null,
+                                    history: newRecord.history || [],
+                                    lastUpdated: newRecord.last_updated || new Date().toISOString()
+                                };
+                                
+                                // 保存到 localStorage
+                                localStorage.setItem('workRecords', JSON.stringify(workRecords));
+                                
+                                // 更新UI
+                                renderEmployeeList();
+                                updateTotalHours();
+                                updateStats();
+                                
+                                showNotification(`员工 ${employeeId} 的工时记录已从云端更新`, 'success');
+                                addSystemLog(`云端同步: 员工 ${employeeId} 工时记录更新`);
+                            }
+                        }
+                        break;
+                        
+                    case 'DELETE':
+                        if (oldRecord && workRecords[oldRecord.employee_id]) {
+                            delete workRecords[oldRecord.employee_id];
+                            localStorage.setItem('workRecords', JSON.stringify(workRecords));
+                            renderEmployeeList();
+                            updateTotalHours();
+                            updateStats();
+                            showNotification(`员工 ${oldRecord.employee_id} 的工时记录已从云端删除`, 'success');
+                        }
+                        break;
+                }
+            }
+
+            // 处理 employees 变化
+            handleEmployeesChange(payload) {
+                const { eventType, new: newEmployee, old: oldEmployee } = payload;
+                
+                switch (eventType) {
+                    case 'INSERT':
+                    case 'UPDATE':
+                        if (newEmployee) {
+                            // 更新本地 employees 数组
+                            const index = employees.findIndex(emp => emp.id === newEmployee.id);
+                            if (index >= 0) {
+                                employees[index] = { 
+                                    name: newEmployee.name, 
+                                    id: newEmployee.id 
+                                };
+                            } else {
+                                employees.push({ 
+                                    name: newEmployee.name, 
+                                    id: newEmployee.id 
+                                });
+                            }
+                            
+                            localStorage.setItem('employees', JSON.stringify(employees));
+                            renderEmployeeList();
+                            updateEmployeeSelect();
+                            updateStats();
+                            
+                            showNotification(`员工 ${newEmployee.name} 信息已从云端更新`, 'success');
+                            addSystemLog(`云端同步: 员工 ${newEmployee.name} 信息更新`);
+                        }
+                        break;
+                        
+                    case 'DELETE':
+                        if (oldEmployee) {
+                            employees = employees.filter(emp => emp.id !== oldEmployee.id);
+                            localStorage.setItem('employees', JSON.stringify(employees));
+                            renderEmployeeList();
+                            updateEmployeeSelect();
+                            updateStats();
+                            showNotification(`员工 ${oldEmployee.id} 已从云端删除`, 'success');
+                        }
+                        break;
+                }
+            }
+
+            // 处理微信扫码记录变化
+            handleWechatScansChange(payload) {
+                if (payload.eventType === 'INSERT' && payload.new) {
+                    const scan = payload.new;
+                    
+                    // 从云端重新同步工作记录，确保数据最新
+                    this.syncWorkRecordsFromCloud().then(() => {
+                        // 更新界面
+                        renderEmployeeList();
+                        updateTotalHours();
+                        updateStats();
+                        loadWechatScans();
+                        
+                        // 显示通知
+                        const employee = employees.find(emp => emp.id === scan.employee_id);
+                        if (employee) {
+                            showNotification(`员工 ${employee.name} 微信扫码考勤已更新`, 'success');
+                            addSystemLog(`微信扫码: 员工 ${employee.name} 扫码考勤`);
+                        }
+                    });
+                }
             }
 
             // 同步所有数据
@@ -646,14 +914,30 @@
                     }
 
                     // 从云端下载工时记录
-                    const { data: records, error: recError } = await this.supabase
+                    await this.syncWorkRecordsFromCloud();
+
+                    showNotification('数据同步完成', 'success');
+                    addSystemLog('从云端同步所有数据');
+                    return true;
+                } catch (error) {
+                    console.error('同步失败:', error);
+                    showNotification('同步失败，使用本地数据', 'error');
+                    return false;
+                }
+            }
+
+            // 从云端同步工作记录
+            async syncWorkRecordsFromCloud() {
+                try {
+                    const { data: records, error } = await this.supabase
                         .from('work_records')
                         .select('*');
-                    
-                    if (!recError && records && records.length > 0) {
-                        const workRecords = {};
+
+                    if (!error && records) {
+                        // 更新本地 workRecords
+                        const newWorkRecords = {};
                         records.forEach(record => {
-                            workRecords[record.employee_id] = {
+                            newWorkRecords[record.employee_id] = {
                                 totalHours: record.total_hours || 0,
                                 todayHours: record.today_hours || 0,
                                 isWorking: record.is_working || false,
@@ -662,14 +946,13 @@
                                 lastUpdated: record.last_updated || new Date().toISOString()
                             };
                         });
+                        
+                        workRecords = newWorkRecords;
                         localStorage.setItem('workRecords', JSON.stringify(workRecords));
+                        return true;
                     }
-
-                    showNotification('数据同步完成', 'success');
-                    return true;
                 } catch (error) {
-                    console.error('同步失败:', error);
-                    showNotification('同步失败，使用本地数据', 'error');
+                    console.error('从云端同步工作记录失败:', error);
                     return false;
                 }
             }
@@ -741,6 +1024,7 @@
                     await this.uploadWorkRecords();
                     console.log('所有数据已上传到云端');
                     showNotification('数据已同步到云端', 'success');
+                    addSystemLog('上传所有数据到云端');
                     return true;
                 } catch (error) {
                     console.error('上传数据失败:', error);
@@ -774,6 +1058,66 @@
                 } catch (error) {
                     console.error('删除员工失败:', error);
                     return false;
+                }
+            }
+
+            // 检查云端更新（手动）
+            async checkForUpdates() {
+                if (!this.isOnline) {
+                    showNotification('云端连接失败', 'error');
+                    return;
+                }
+
+                showNotification('正在检查云端更新...', 'success');
+                
+                try {
+                    // 获取本地最后同步时间
+                    const lastSyncTime = localStorage.getItem('lastCloudSyncTime') || 0;
+                    
+                    // 检查更新的工作记录
+                    const { data: updatedRecords, error } = await this.supabase
+                        .from('work_records')
+                        .select('*')
+                        .gt('last_updated', new Date(parseInt(lastSyncTime)).toISOString());
+                    
+                    let updateCount = 0;
+                    
+                    if (!error && updatedRecords && updatedRecords.length > 0) {
+                        updateCount += updatedRecords.length;
+                        
+                        // 更新本地数据
+                        updatedRecords.forEach(record => {
+                            workRecords[record.employee_id] = {
+                                totalHours: record.total_hours || 0,
+                                todayHours: record.today_hours || 0,
+                                isWorking: record.is_working || false,
+                                startTime: record.start_time ? new Date(record.start_time).getTime() : null,
+                                history: record.history || [],
+                                lastUpdated: record.last_updated || new Date().toISOString()
+                            };
+                        });
+                        
+                        localStorage.setItem('workRecords', JSON.stringify(workRecords));
+                    }
+                    
+                    // 更新最后同步时间
+                    localStorage.setItem('lastCloudSyncTime', Date.now());
+                    
+                    if (updateCount > 0) {
+                        // 更新UI
+                        renderEmployeeList();
+                        updateTotalHours();
+                        updateStats();
+                        
+                        showNotification(`发现 ${updateCount} 条云端更新`, 'success');
+                        addSystemLog(`手动检查: 发现 ${updateCount} 条云端更新`);
+                    } else {
+                        showNotification('没有发现新的云端更新', 'success');
+                    }
+                    
+                } catch (error) {
+                    console.error('检查更新失败:', error);
+                    showNotification('检查更新失败', 'error');
                 }
             }
         }
@@ -815,6 +1159,8 @@
         const statActiveEmployees = document.getElementById('statActiveEmployees');
         const syncToCloudBtn = document.getElementById('syncToCloud');
         const syncFromCloudBtn = document.getElementById('syncFromCloud');
+        const checkUpdatesBtn = document.getElementById('checkUpdates');
+        const toggleRealtimeBtn = document.getElementById('toggleRealtime');
         const wechatScansList = document.getElementById('wechatScansList');
         
         // 时间格式化函数
@@ -877,7 +1223,7 @@
             
             // 重新加载本地数据（可能已被云端数据更新）
             employees = JSON.parse(localStorage.getItem('employees')) || [];
-            workRecords = JSON.parse(localStorage.getItem('workRecords')) || {};
+            workRecords = JSON.parse(localStorage.getItem('workRecords')) || [];
             
             renderEmployeeList();
             updateEmployeeSelect();
@@ -913,12 +1259,28 @@
                 await cloudSync.syncAllData();
                 // 重新加载数据并更新UI
                 employees = JSON.parse(localStorage.getItem('employees')) || [];
-                workRecords = JSON.parse(localStorage.getItem('workRecords')) || {};
+                workRecords = JSON.parse(localStorage.getItem('workRecords')) || [];
                 renderEmployeeList();
                 updateEmployeeSelect();
                 updateTotalHours();
                 updateStats();
                 loadWechatScans();
+            });
+
+            // 检查更新按钮事件
+            checkUpdatesBtn.addEventListener('click', () => cloudSync.checkForUpdates());
+
+            // 实时同步切换按钮事件
+            toggleRealtimeBtn.addEventListener('click', async () => {
+                if (cloudSync.isRealtimeEnabled) {
+                    cloudSync.disableRealtimeSync();
+                    toggleRealtimeBtn.textContent = '开启实时同步';
+                } else {
+                    const success = await cloudSync.enableRealtimeSync();
+                    if (success) {
+                        toggleRealtimeBtn.textContent = '关闭实时同步';
+                    }
+                }
             });
             
             // 标签页切换事件
@@ -1562,7 +1924,7 @@
                     console.log('检测到新的微信扫码，更新工作状态:', latestScan.employee_id);
                     
                     // 从云端重新同步工作记录，确保数据最新
-                    await syncWorkRecordsFromCloud();
+                    await cloudSync.syncWorkRecordsFromCloud();
                     
                     // 更新界面
                     renderEmployeeList();
@@ -1581,35 +1943,6 @@
                 }
             } catch (error) {
                 console.error('检查微信扫码记录失败:', error);
-            }
-        }
-
-        // 从云端同步工作记录
-        async function syncWorkRecordsFromCloud() {
-            try {
-                const { data: records, error } = await cloudSync.supabase
-                    .from('work_records')
-                    .select('*');
-
-                if (!error && records) {
-                    // 更新本地 workRecords
-                    const newWorkRecords = {};
-                    records.forEach(record => {
-                        newWorkRecords[record.employee_id] = {
-                            totalHours: record.total_hours || 0,
-                            todayHours: record.today_hours || 0,
-                            isWorking: record.is_working || false,
-                            startTime: record.start_time ? new Date(record.start_time).getTime() : null,
-                            history: record.history || [],
-                            lastUpdated: record.last_updated || new Date().toISOString()
-                        };
-                    });
-                    
-                    workRecords = newWorkRecords;
-                    localStorage.setItem('workRecords', JSON.stringify(workRecords));
-                }
-            } catch (error) {
-                console.error('从云端同步工作记录失败:', error);
             }
         }
     </script>
