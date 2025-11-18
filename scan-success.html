@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>扫码考勤</title>
+    <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
     <style>
         body {
             font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -32,10 +33,23 @@
         .error { color: #e74c3c; }
         .loading { color: #3498db; }
         h1 { color: #333; margin-bottom: 15px; }
-        .info { background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; }
+        .info { 
+            background: #f8f9fa; 
+            padding: 15px; 
+            border-radius: 8px; 
+            margin: 15px 0;
+            text-align: left;
+        }
+        .scanner-info {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
         .debug { 
-            background: #fff3cd; 
-            border: 1px solid #ffeaa7; 
+            background: #f8f9fa; 
+            border: 1px solid #dee2e6; 
             padding: 10px; 
             border-radius: 5px; 
             margin-top: 15px;
@@ -53,6 +67,15 @@
             margin: 5px;
         }
         .retry-btn { background: #e74c3c; }
+        .scanner-badge {
+            display: inline-block;
+            background: #e67e22;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            margin-left: 8px;
+        }
     </style>
 </head>
 <body>
@@ -61,7 +84,7 @@
         <div id="loadingState">
             <div class="icon loading">⏳</div>
             <h1>处理中...</h1>
-            <p>正在记录考勤信息</p>
+            <p>正在识别身份并记录考勤</p>
             <div class="debug" id="loadingDebug"></div>
         </div>
 
@@ -72,6 +95,9 @@
             <div class="info">
                 <div style="font-size: 18px; font-weight: bold;" id="successName">--</div>
                 <div style="color: #666;" id="successId">工号: --</div>
+                <div class="scanner-info" id="scannerInfo">
+                    <strong>扫描者:</strong> <span id="scannerName">识别中...</span>
+                </div>
             </div>
             <p id="successTime"></p>
             <p style="color: #999; font-size: 14px;" id="closeInfo"></p>
@@ -89,6 +115,21 @@
             </div>
             <div class="debug" id="errorDebug"></div>
         </div>
+
+        <!-- 身份确认状态 -->
+        <div id="confirmState" style="display: none;">
+            <div class="icon loading">🔍</div>
+            <h1>身份确认</h1>
+            <p>请确认您的工程师身份</p>
+            <div class="info">
+                <div id="confirmName">--</div>
+                <div style="color: #666; font-size: 14px;" id="confirmOpenid">--</div>
+            </div>
+            <div>
+                <button onclick="confirmIdentity()">确认身份</button>
+                <button class="retry-btn" onclick="rejectIdentity()">取消</button>
+            </div>
+        </div>
     </div>
 
 <script>
@@ -97,7 +138,8 @@ function getUrlParams() {
     const params = new URLSearchParams(window.location.search);
     return {
         id: params.get('id'),
-        name: params.get('name') || '员工'
+        name: params.get('name') || '员工',
+        auth_type: params.get('auth_type')
     };
 }
 
@@ -111,14 +153,163 @@ function showDebug(elementId, message) {
     }
 }
 
+// 获取微信用户信息
+function getWechatUserInfo() {
+    return new Promise((resolve, reject) => {
+        // 检查是否在微信环境中
+        if (typeof wx === 'undefined') {
+            reject(new Error('非微信环境'));
+            return;
+        }
+
+        // 配置微信JS-SDK（实际项目中需要后端签名）
+        wx.config({
+            debug: false,
+            appId: '', // 需要填写你的公众号AppID
+            timestamp: '', // 需要后端生成
+            nonceStr: '', // 需要后端生成
+            signature: '', // 需要后端生成
+            jsApiList: [
+                'checkJsApi',
+                'getNetworkType',
+                'getLocation',
+                'chooseImage',
+                'previewImage',
+                'uploadImage',
+                'downloadImage',
+                'getLocalImgData',
+                'startRecord',
+                'stopRecord',
+                'onVoiceRecordEnd',
+                'playVoice',
+                'pauseVoice',
+                'stopVoice',
+                'onVoicePlayEnd',
+                'uploadVoice',
+                'downloadVoice',
+                'translateVoice',
+                'openLocation',
+                'getLocation',
+                'hideOptionMenu',
+                'showOptionMenu',
+                'hideMenuItems',
+                'showMenuItems',
+                'hideAllNonBaseMenuItem',
+                'showAllNonBaseMenuItem',
+                'closeWindow',
+                'scanQRCode',
+                'chooseWXPay',
+                'openProductSpecificView',
+                'addCard',
+                'chooseCard',
+                'openCard',
+                'openAddress',
+                'getWeRunData',
+                'startSearchBeacons',
+                'stopSearchBeacons',
+                'onSearchBeacons',
+                'openEnterpriseChat',
+                'openEnterpriseRedPacket',
+                'startRecord',
+                'stopRecord',
+                'onVoiceRecordEnd',
+                'playVoice',
+                'pauseVoice',
+                'stopVoice',
+                'onVoicePlayEnd',
+                'uploadVoice',
+                'downloadVoice',
+                'translateVoice',
+                'openLocation',
+                'getLocation'
+            ]
+        });
+
+        wx.ready(function() {
+            // 尝试获取用户信息
+            wx.getUserInfo({
+                success: function(res) {
+                    const userInfo = res.userInfo;
+                    resolve({
+                        openid: userInfo.openId || generateTempOpenid(),
+                        nickname: userInfo.nickName || '微信用户',
+                        avatar: userInfo.avatarUrl || '',
+                        gender: userInfo.gender || 0,
+                        province: userInfo.province || '',
+                        city: userInfo.city || ''
+                    });
+                },
+                fail: function(err) {
+                    // 如果获取用户信息失败，使用临时身份
+                    console.warn('获取用户信息失败，使用临时身份:', err);
+                    resolve({
+                        openid: generateTempOpenid(),
+                        nickname: '临时用户',
+                        avatar: '',
+                        isTemporary: true
+                    });
+                }
+            });
+        });
+
+        wx.error(function(err) {
+            reject(new Error('微信JS-SDK初始化失败: ' + JSON.stringify(err)));
+        });
+    });
+}
+
+// 生成临时OpenID（用于测试或无法获取微信信息时）
+function generateTempOpenid() {
+    return 'temp_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+}
+
+// 检查工程师身份
+async function checkEngineerIdentity(openid) {
+    try {
+        const response = await fetch('https://ynkmlbczkcporjdpawbr.supabase.co/rest/v1/engineers?openid=eq.' + openid, {
+            method: 'GET',
+            headers: {
+                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY',
+                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+        }
+
+        const engineers = await response.json();
+        return engineers.length > 0 ? engineers[0] : null;
+    } catch (error) {
+        console.error('检查工程师身份失败:', error);
+        return null;
+    }
+}
+
+// 确认身份
+function confirmIdentity() {
+    document.getElementById('confirmState').style.display = 'none';
+    document.getElementById('loadingState').style.display = 'block';
+    // 继续执行考勤记录
+    setTimeout(() => performAttendance(currentUserInfo, currentEmployeeInfo), 500);
+}
+
+// 拒绝身份
+function rejectIdentity() {
+    showError('身份确认被取消，无法记录考勤');
+}
+
 // 备用方案：使用Fetch API直接调用Supabase REST API
-async function fallbackToRestAPI(employeeId, employeeName) {
+async function fallbackToRestAPI(employeeId, employeeName, scannerInfo) {
     showDebug('errorDebug', '尝试备用方案...');
     
     const scanData = {
         employee_id: employeeId,
+        scanner_openid: scannerInfo.openid,
+        scanner_name: scannerInfo.nickname,
         user_agent: navigator.userAgent,
-        scan_time: new Date().toISOString()
+        scan_time: new Date().toISOString(),
+        is_fallback: true
     };
 
     try {
@@ -136,12 +327,11 @@ async function fallbackToRestAPI(employeeId, employeeName) {
 
         if (response.ok) {
             showDebug('errorDebug', '备用方案成功！数据已记录。');
-            showSuccess(employeeName, employeeId, '（通过备用方案）');
+            showSuccess(employeeName, employeeId, scannerInfo, '（通过备用方案）');
             return true;
         } else {
             const errorText = await response.text();
-            throw new Error(`HTTP response.status:
-{errorText}`);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
     } catch (error) {
         showDebug('errorDebug', '备用方案失败: ' + error.message);
@@ -150,28 +340,41 @@ async function fallbackToRestAPI(employeeId, employeeName) {
 }
 
 // 显示成功页面
-function showSuccess(name, id, action = '') {
+function showSuccess(name, id, scannerInfo, action = '') {
     document.getElementById('loadingState').style.display = 'none';
     document.getElementById('errorState').style.display = 'none';
     document.getElementById('successState').style.display = 'block';
     
     document.getElementById('successName').textContent = name;
-    document.getElementById('successId').textContent = `工号: {id}`;
+    document.getElementById('successId').textContent = `工号: ${id}`;
+    document.getElementById('scannerName').textContent = scannerInfo.nickname;
+    
+    // 如果是临时用户，显示提示
+    if (scannerInfo.isTemporary) {
+        document.getElementById('scannerInfo').innerHTML += 
+            '<div style="color: #e67e22; font-size: 12px; margin-top: 5px;">⚠️ 临时身份，请绑定正式工程师身份</div>';
+    }
     
     // 显示具体的操作结果
     if (action) {
-        document.getElementById('successTime').textContent = `
-{action}成功 - 时间: {new Date().toLocaleString('zh-CN')}`;
+        document.getElementById('successTime').textContent = 
+            `${action}成功 - 时间: ${new Date().toLocaleString('zh-CN')}`;
     } else {
-        document.getElementById('successTime').textContent = `时间:
-{new Date().toLocaleString('zh-CN')}`;
+        document.getElementById('successTime').textContent = 
+            `时间: ${new Date().toLocaleString('zh-CN')}`;
     }
     
     document.getElementById('closeInfo').textContent = '本页面将自动关闭';
     
     setTimeout(() => {
-        try { window.close(); } 
-        catch (e) { 
+        try { 
+            // 尝试关闭窗口
+            if (window.WeixinJSBridge) {
+                WeixinJSBridge.call('closeWindow');
+            } else {
+                window.close();
+            }
+        } catch (e) { 
             document.getElementById('closeInfo').textContent = '请手动关闭此页面';
         }
     }, 3000);
@@ -181,6 +384,7 @@ function showSuccess(name, id, action = '') {
 function showError(message) {
     document.getElementById('loadingState').style.display = 'none';
     document.getElementById('successState').style.display = 'none';
+    document.getElementById('confirmState').style.display = 'none';
     document.getElementById('errorState').style.display = 'block';
     document.getElementById('errorMessage').textContent = message;
 }
@@ -196,130 +400,105 @@ function retry() {
 // 使用备用方案
 function useFallback() {
     const params = getUrlParams();
-    fallbackToRestAPI(params.id, params.name);
-}
-
-// 主初始化函数
-async function init() {
-    const params = getUrlParams();
-    showDebug('loadingDebug', `员工: params.name(
-{params.id})`);
-    
-    if (!params.id) {
-        showError('无效的二维码：缺少员工信息');
-        return;
-    }
-
-    try {
-        showDebug('loadingDebug', '正在加载Supabase库...');
-        
-        // 动态加载Supabase库
-        await loadSupabase();
-        
-        showDebug('loadingDebug', 'Supabase加载完成，开始记录数据...');
-        
-        // 记录考勤
-const success = await recordAttendance(params.id, params.name);
-
-if (success && success.action) {
-    showSuccess(params.name, params.id, success.action);
-} else if (success) {
-    showSuccess(params.name, params.id, '考勤');
-} else {
-    showError('考勤记录失败，请使用备用方案');
-}
-        
-    } catch (error) {
-        console.error('初始化失败:', error);
-        showDebug('errorDebug', '错误详情: ' + error.message);
-        showError('系统加载失败，请使用备用方案');
-    }
-}
-
-// 动态加载Supabase
-function loadSupabase() {
-    return new Promise((resolve, reject) => {
-        // 检查是否已加载
-        if (window.supabase) {
-            resolve();
-            return;
-        }
-
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-        script.onload = () => {
-            // 给点时间让库初始化
-            setTimeout(resolve, 100);
+    if (currentUserInfo) {
+        fallbackToRestAPI(params.id, params.name, currentUserInfo);
+    } else {
+        // 如果没有用户信息，创建临时身份
+        const tempUserInfo = {
+            openid: generateTempOpenid(),
+            nickname: '临时用户',
+            isTemporary: true
         };
-        script.onerror = () => reject(new Error('Failed to load Supabase'));
-        document.head.appendChild(script);
-    });
+        fallbackToRestAPI(params.id, params.name, tempUserInfo);
+    }
 }
 
-// 记录考勤 - 完整版本
-async function recordAttendance(employeeId, employeeName) {
+// 全局变量存储用户和员工信息
+let currentUserInfo = null;
+let currentEmployeeInfo = null;
+
+// 执行考勤记录
+async function performAttendance(userInfo, employeeInfo) {
     try {
-        showDebug('loadingDebug', '初始化Supabase客户端...');
+        showDebug('loadingDebug', '开始记录考勤数据...');
         
-        // 初始化Supabase
-        const supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
-        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
-        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
-        
-        showDebug('loadingDebug', '1. 插入扫码记录...');
-        
-        // 1. 插入扫码记录
-        const { data: scanData, error: scanError } = await supabase
-            .from('wechat_scans')
-            .insert([{
-                employee_id: employeeId,
-                user_agent: navigator.userAgent,
-                scan_time: new Date().toISOString()
-            }])
-            .select();
-
-        if (scanError) {
-            showDebug('errorDebug', '扫码记录插入失败: ' + scanError.message);
-            // 继续尝试更新工作状态，不直接返回
-        } else {
-            showDebug('successDebug', '扫码记录插入成功');
+        // 1. 记录扫码记录（包含扫描者信息）
+        const scanSuccess = await recordScan(userInfo, employeeInfo);
+        if (!scanSuccess) {
+            throw new Error('记录扫码信息失败');
         }
-
-        showDebug('loadingDebug', '2. 更新工作状态...');
         
-        // 2. 更新工作状态（这是关键！）
-        const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName);
+        // 2. 更新工作状态
+        const workStatusSuccess = await updateWorkStatus(userInfo, employeeInfo);
         
-        if (workStatusResult.success) {
-            showDebug('successDebug', `工作状态更新成功: {workStatusResult.action}`);
-            return true;
+        if (workStatusSuccess) {
+            showSuccess(employeeInfo.name, employeeInfo.id, userInfo, workStatusSuccess.action);
         } else {
-            showDebug('errorDebug', '工作状态更新失败: ' + workStatusResult.error);
-            return false;
+            showError('工作状态更新失败，但扫码记录已保存');
         }
         
     } catch (error) {
-        showDebug('errorDebug', '记录考勤异常: ' + error.message);
+        console.error('考勤记录失败:', error);
+        showDebug('errorDebug', '错误详情: ' + error.message);
+        showError('考勤记录失败，请使用备用方案');
+    }
+}
+
+// 记录扫码信息
+async function recordScan(userInfo, employeeInfo) {
+    try {
+        const scanData = {
+            employee_id: employeeInfo.id,
+            scanner_openid: userInfo.openid,
+            scanner_name: userInfo.nickname,
+            user_agent: navigator.userAgent,
+            scan_time: new Date().toISOString(),
+            is_temporary: userInfo.isTemporary || false
+        };
+
+        const response = await fetch('https://ynkmlbczkcporjdpawbr.supabase.co/rest/v1/wechat_scans', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY',
+                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY',
+                'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify(scanData)
+        });
+
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+        }
+
+        showDebug('loadingDebug', '扫码记录保存成功');
+        return true;
+    } catch (error) {
+        console.error('记录扫码信息失败:', error);
         return false;
     }
 }
 
-// 更新工作状态 - 核心逻辑
-async function updateWorkStatus(supabase, employeeId, employeeName) {
+// 更新工作状态
+async function updateWorkStatus(userInfo, employeeInfo) {
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
         
         // 1. 获取员工当前的工作状态
-        const { data: currentRecord, error: fetchError } = await supabase
-            .from('work_records')
-            .select('*')
-            .eq('employee_id', employeeId)
-            .single();
+        const response = await fetch(`https://ynkmlbczkcporjdpawbr.supabase.co/rest/v1/work_records?employee_id=eq.${employeeInfo.id}`, {
+            method: 'GET',
+            headers: {
+                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY',
+                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY'
+            }
+        });
 
-        // 如果记录不存在，不算错误，我们创建新记录
-        if (fetchError && !fetchError.message.includes('不存在')) {
-            throw fetchError;
+        if (!response.ok) {
+            throw new Error('获取工作状态失败: HTTP ' + response.status);
         }
+
+        const records = await response.json();
+        const currentRecord = records.length > 0 ? records[0] : null;
 
         const now = new Date().toISOString();
         let action = '';
@@ -337,7 +516,7 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
             
             // 更新记录：暂停工作
             newRecord = {
-                employee_id: employeeId,
+                employee_id: employeeInfo.id,
                 is_working: false,
                 start_time: null,
                 total_hours: newTotalHours,
@@ -345,8 +524,7 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
                 history: [
                     ...(currentRecord.history || []),
                     {
-                        action: `微信扫码下工 - 工作时长:
-{workTimeHours.toFixed(2)}小时`,
+                        action: `微信扫码下工 - 扫描者: ${userInfo.nickname} - 工作时长: ${workTimeHours.toFixed(2)}小时`,
                         timestamp: now
                     }
                 ]
@@ -359,27 +537,44 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
             
             // 创建或更新记录：开始工作
             newRecord = {
-                employee_id: employeeId,
+                employee_id: employeeInfo.id,
                 is_working: true,
                 start_time: now,
                 total_hours: currentRecord ? parseFloat(currentRecord.total_hours) : 0,
+                today_hours: 0,
                 last_updated: now,
                 history: [
                     ...(currentRecord?.history || []),
                     {
-                        action: '微信扫码上工',
+                        action: `微信扫码上工 - 扫描者: ${userInfo.nickname}`,
                         timestamp: now
                     }
                 ]
             };
         }
 
-        showDebug('loadingDebug', `执行action操作，更新数据...‘);//插入或更新工作记录constdata:workData,error:workError=awaitsupabase.from(′workrecords′).upsert(newRecord,onConflict:′employeeid′,ignoreDuplicates:false).select();if(workError)thrownewError(‘工作记录更新失败:$workError.message‘);showDebug(′successDebug′,‘
-{action}操作成功完成`);
+        showDebug('loadingDebug', `执行${action}操作，更新数据...`);
+        
+        // 插入或更新工作记录
+        const upsertResponse = await fetch('https://ynkmlbczkcporjdpawbr.supabase.co/rest/v1/work_records', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY',
+                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY',
+                'Prefer': 'resolution=merge-duplicates'
+            },
+            body: JSON.stringify(newRecord)
+        });
+
+        if (!upsertResponse.ok) {
+            throw new Error('工作记录更新失败: HTTP ' + upsertResponse.status);
+        }
+
+        showDebug('successDebug', `${action}操作成功完成`);
         return {
             success: true,
-            action: action,
-            data: workData
+            action: action
         };
 
     } catch (error) {
@@ -388,6 +583,57 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
             success: false,
             error: error.message
         };
+    }
+}
+
+// 主初始化函数
+async function init() {
+    const params = getUrlParams();
+    showDebug('loadingDebug', `员工: ${params.name}(${params.id})`);
+    
+    if (!params.id) {
+        showError('无效的二维码：缺少员工信息');
+        return;
+    }
+
+    currentEmployeeInfo = {
+        id: params.id,
+        name: params.name
+    };
+
+    try {
+        showDebug('loadingDebug', '正在获取微信用户信息...');
+        
+        // 获取微信用户信息
+        currentUserInfo = await getWechatUserInfo();
+        showDebug('loadingDebug', `识别到用户: ${currentUserInfo.nickname}`);
+        
+        // 检查是否是已绑定的工程师
+        const engineer = await checkEngineerIdentity(currentUserInfo.openid);
+        
+        if (engineer) {
+            // 如果是已绑定的工程师，直接使用
+            currentUserInfo.nickname = engineer.name;
+            currentUserInfo.isEngineer = true;
+            showDebug('loadingDebug', `已识别为工程师: ${engineer.name}`);
+            performAttendance(currentUserInfo, currentEmployeeInfo);
+        } else if (currentUserInfo.isTemporary) {
+            // 如果是临时用户，直接继续
+            showDebug('loadingDebug', '使用临时身份继续...');
+            performAttendance(currentUserInfo, currentEmployeeInfo);
+        } else {
+            // 如果是新用户，需要确认身份
+            showDebug('loadingDebug', '新用户，需要身份确认...');
+            document.getElementById('loadingState').style.display = 'none';
+            document.getElementById('confirmState').style.display = 'block';
+            document.getElementById('confirmName').textContent = `微信用户: ${currentUserInfo.nickname}`;
+            document.getElementById('confirmOpenid').textContent = `OpenID: ${currentUserInfo.openid.substring(0, 10)}...`;
+        }
+        
+    } catch (error) {
+        console.error('初始化失败:', error);
+        showDebug('errorDebug', '错误详情: ' + error.message);
+        showError('身份识别失败，请使用备用方案');
     }
 }
 
