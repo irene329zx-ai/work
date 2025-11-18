@@ -446,46 +446,6 @@
             50% { opacity: 0.4; }
             100% { opacity: 1; }
         }
-        
-        /* 扫描者信息样式 */
-        .scanner-info {
-            font-size: 12px;
-            color: #e67e22;
-            margin-top: 3px;
-            font-weight: 600;
-        }
-        
-        .scanner-tag {
-            display: inline-block;
-            background: #f39c12;
-            color: white;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 11px;
-            margin-left: 5px;
-        }
-        
-        .engineer-management {
-            margin-top: 20px;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 8px;
-        }
-        
-        .engineer-list {
-            margin-top: 10px;
-        }
-        
-        .engineer-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 12px;
-            background: white;
-            margin-bottom: 8px;
-            border-radius: 5px;
-            border-left: 3px solid #3498db;
-        }
     </style>
 </head>
 <body>
@@ -555,7 +515,7 @@
 
                     <!-- 微信扫码记录 -->
                     <div class="card">
-                        <h2>最近微信扫码记录 <span class="scanner-tag">含扫描者信息</span></h2>
+                        <h2>最近微信扫码记录</h2>
                         <div class="recent-activity" id="wechatScansList">
                             <!-- 微信扫码记录将通过JavaScript动态生成 -->
                         </div>
@@ -584,23 +544,6 @@
                         
                         <div class="work-history" id="workHistory">
                             <!-- 工作历史记录将通过JavaScript动态生成 -->
-                        </div>
-                    </div>
-                    
-                    <!-- 工程师管理 -->
-                    <div class="card">
-                        <h2>工程师管理 <span class="scanner-tag">扫描者身份</span></h2>
-                        <div class="engineer-management">
-                            <p style="font-size: 14px; color: #7f8c8d; margin-bottom: 10px;">
-                                系统自动识别扫描者身份，无需手动选择
-                            </p>
-                            <div class="action-buttons">
-                                <button id="registerEngineer" class="secondary">注册当前设备</button>
-                                <button id="viewScannerInfo">查看扫描者信息</button>
-                            </div>
-                            <div class="engineer-list" id="engineerList">
-                                <!-- 工程师列表将通过JavaScript动态生成 -->
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -663,122 +606,6 @@
     <div class="notification" id="notification"></div>
 
     <script>
-        // 扫描者身份管理类
-class ScannerIdentityManager {
-    constructor() {
-        this.supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
-        this.supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
-        this.supabase = supabase.createClient(this.supabaseUrl, this.supabaseKey);
-        this.currentScannerId = this.generateBrowserFingerprint();
-        this.engineers = {};
-        this.loadEngineers();
-    }
-    
-    // 从云端加载工程师信息
-    async loadEngineers() {
-        try {
-            const { data, error } = await this.supabase
-                .from('engineers')
-                .select('*');
-                
-            if (!error && data) {
-                data.forEach(engineer => {
-                    this.engineers[engineer.identity] = engineer.name;
-                });
-            }
-        } catch (error) {
-            console.warn('加载工程师信息失败:', error);
-        }
-    }
-    
-    // 注册当前设备为工程师（保存到云端）
-    async registerCurrentDevice(engineerName) {
-        if (!engineerName || engineerName.trim() === '') {
-            return { success: false, message: '请输入工程师姓名' };
-        }
-        
-        try {
-            const { data, error } = await this.supabase
-                .from('engineers')
-                .upsert({
-                    identity: this.currentScannerId,
-                    name: engineerName.trim(),
-                    role: 'engineer'
-                }, { onConflict: 'identity' })
-                .select();
-                
-            if (error) throw error;
-            
-            this.engineers[this.currentScannerId] = engineerName.trim();
-            
-            return { 
-                success: true, 
-                message: `设备已注册为工程师: ${engineerName}`,
-                scanner: this.getCurrentScanner()
-            };
-        } catch (error) {
-            console.error('注册工程师失败:', error);
-            return { 
-                success: false, 
-                message: '注册失败，请检查网络连接' 
-            };
-        }
-    }
-            
-            // 生成浏览器指纹
-            generateBrowserFingerprint() {
-                const components = [
-                    navigator.userAgent,
-                    navigator.language,
-                    screen.colorDepth,
-                    screen.width + 'x' + screen.height,
-                    new Date().getTimezoneOffset()
-                ].join('|');
-                
-                // 简单哈希生成指纹
-                let hash = 0;
-                for (let i = 0; i < components.length; i++) {
-                    const char = components.charCodeAt(i);
-                    hash = ((hash << 5) - hash) + char;
-                    hash = hash & hash;
-                }
-                return 'scanner_' + Math.abs(hash).toString(36);
-            }
-            
-            // 获取当前扫描者身份
-            getCurrentScanner() {
-                return {
-                    identity: this.currentScannerId,
-                    name: this.engineers[this.currentScannerId] || '未知扫描者',
-                    type: 'browser_fingerprint'
-                };
-            }
-            
-            // 注册当前设备为工程师
-            registerCurrentDevice(engineerName) {
-                if (!engineerName || engineerName.trim() === '') {
-                    return { success: false, message: '请输入工程师姓名' };
-                }
-                
-                this.engineers[this.currentScannerId] = engineerName.trim();
-                localStorage.setItem('engineers', JSON.stringify(this.engineers));
-                
-                return { 
-                    success: true, 
-                    message: `设备已注册为工程师: ${engineerName}`,
-                    scanner: this.getCurrentScanner()
-                };
-            }
-            
-            // 获取所有已注册的工程师
-            getAllEngineers() {
-                return Object.entries(this.engineers).map(([id, name]) => ({
-                    id,
-                    name
-                }));
-            }
-        }
-
         // Supabase云同步类 - 增强版（支持双向同步）
         class CloudSync {
             constructor() {
@@ -1297,8 +1124,6 @@ class ScannerIdentityManager {
 
         // 创建全局云同步实例
         const cloudSync = new CloudSync();
-        // 创建扫描者身份管理器
-        const scannerManager = new ScannerIdentityManager();
 
         // 全局变量
         let employees = JSON.parse(localStorage.getItem('employees')) || [];
@@ -1337,9 +1162,6 @@ class ScannerIdentityManager {
         const checkUpdatesBtn = document.getElementById('checkUpdates');
         const toggleRealtimeBtn = document.getElementById('toggleRealtime');
         const wechatScansList = document.getElementById('wechatScansList');
-        const registerEngineerBtn = document.getElementById('registerEngineer');
-        const viewScannerInfoBtn = document.getElementById('viewScannerInfo');
-        const engineerList = document.getElementById('engineerList');
         
         // 时间格式化函数
         function formatDateTime(timestamp) {
@@ -1409,7 +1231,6 @@ class ScannerIdentityManager {
             updateStats();
             renderSystemLogs();
             loadWechatScans();
-            renderEngineerList();
             
             // 生成二维码按钮事件
             generateQRBtn.addEventListener('click', generateQRCode);
@@ -1461,10 +1282,6 @@ class ScannerIdentityManager {
                     }
                 }
             });
-            
-            // 工程师管理按钮事件
-            registerEngineerBtn.addEventListener('click', registerCurrentEngineer);
-            viewScannerInfoBtn.addEventListener('click', showScannerInfo);
             
             // 标签页切换事件
             tabs.forEach(tab => {
@@ -1624,7 +1441,6 @@ class ScannerIdentityManager {
                             <div class="work-time-item"><span class="work-time-label">总计:</span> ${totalHours} 小时</div>
                         </div>
                         ${startTime ? `<div class="time-info">开始时间: ${formatDateTime(startTime)}</div>` : ''}
-                        ${getLastScannerInfo(employee.id) ? `<div class="scanner-info">${getLastScannerInfo(employee.id)}</div>` : ''}
                     </div>
                     <div class="employee-actions">
                         <div class="employee-status ${statusClass}">${statusText}</div>
@@ -1645,22 +1461,6 @@ class ScannerIdentityManager {
                     deleteEmployee(employeeId);
                 });
             });
-        }
-        
-        // 获取最后扫描者信息
-        function getLastScannerInfo(employeeId) {
-            if (!workRecords[employeeId] || !workRecords[employeeId].history) {
-                return null;
-            }
-            
-            const history = workRecords[employeeId].history;
-            for (let i = history.length - 1; i >= 0; i--) {
-                const item = history[i];
-                if (item.scanner) {
-                    return `最后扫描者: ${item.scanner.name}`;
-                }
-            }
-            return null;
         }
         
         // 计算员工今日工时
@@ -2088,15 +1888,9 @@ class ScannerIdentityManager {
                 const employee = employees.find(emp => emp.id === scan.employee_id);
                 const employeeName = employee ? employee.name : scan.employee_id;
                 const scanTime = new Date(scan.scan_time).toLocaleString('zh-CN');
-                
-                // 显示扫描者信息
-                const scannerInfo = scan.scanner_name ? 
-                    `扫描者: ${scan.scanner_name}` : 
-                    '扫描者: 未知';
 
                 scanItem.innerHTML = `
                     <div><strong>${employeeName}</strong> (${scan.employee_id})</div>
-                    <div>${scannerInfo}</div>
                     <div class="wechat-scan-time">${scanTime}</div>
                 `;
 
@@ -2150,64 +1944,6 @@ class ScannerIdentityManager {
             } catch (error) {
                 console.error('检查微信扫码记录失败:', error);
             }
-        }
-
-        // ==================== 扫描者身份管理功能 ====================
-
-        // 注册当前设备为工程师
-        function registerCurrentEngineer() {
-            const engineerName = prompt('请输入您的姓名（将作为扫描者身份标识）:');
-            
-            if (!engineerName || engineerName.trim() === '') {
-                showNotification('请输入有效的姓名', 'error');
-                return;
-            }
-            
-            const result = scannerManager.registerCurrentDevice(engineerName);
-            
-            if (result.success) {
-                showNotification(result.message, 'success');
-                renderEngineerList();
-                addSystemLog(`注册扫描者身份: ${engineerName}`);
-            } else {
-                showNotification(result.message, 'error');
-            }
-        }
-
-        // 显示当前扫描者信息
-        function showScannerInfo() {
-            const scanner = scannerManager.getCurrentScanner();
-            alert(`当前设备扫描者信息:\n\n身份ID: ${scanner.identity}\n姓名: ${scanner.name}\n类型: ${scanner.type}`);
-        }
-
-        // 渲染工程师列表
-        function renderEngineerList() {
-            engineerList.innerHTML = '';
-            
-            const engineers = scannerManager.getAllEngineers();
-            
-            if (engineers.length === 0) {
-                engineerList.innerHTML = '<div class="empty-state">暂无注册的工程师</div>';
-                return;
-            }
-            
-            engineers.forEach(engineer => {
-                const engineerItem = document.createElement('div');
-                engineerItem.className = 'engineer-item';
-                
-                // 检查是否是当前设备
-                const isCurrent = engineer.id === scannerManager.currentScannerId;
-                
-                engineerItem.innerHTML = `
-                    <div>
-                        <strong>${engineer.name}</strong>
-                        ${isCurrent ? '<span class="scanner-tag">当前设备</span>' : ''}
-                    </div>
-                    <div style="font-size: 10px; color: #7f8c8d;">${engineer.id}</div>
-                `;
-                
-                engineerList.appendChild(engineerItem);
-            });
         }
     </script>
 </body>
