@@ -1174,52 +1174,55 @@
         
         // 生成二维码
         function generateQRCode() {
-            const name = employeeNameInput.value.trim();
-            const id = employeeIdInput.value.trim();
-            
-            // 输入验证
-            const validationError = validateEmployeeInput(name, id);
-            if (validationError) {
-                showNotification(validationError, 'error');
-                return;
-            }
-            
-            // 检查员工是否已存在
-            if (employees.some(emp => emp.id === id)) {
-                showNotification('该工号已存在', 'error');
-                return;
-            }
-            
-            // 添加员工到列表
-            employees.push({ name, id });
-            localStorage.setItem('employees', JSON.stringify(employees));
-            
-            // 生成二维码
-            qrPlaceholder.style.display = 'none';
-            
-            QRCode.toCanvas(document.getElementById('qrcode'), id, {
-                width: 200,
-                margin: 1,
-                color: {
-                    dark: '#000000',
-                    light: '#FFFFFF'
-                }
-            }, function(error) {
-                if (error) {
-                    console.error(error);
-                    showNotification('生成二维码失败', 'error');
-                } else {
-                    showNotification('员工信息已保存，二维码已生成', 'success');
-                    renderEmployeeList();
-                    updateEmployeeSelect();
-                    updateStats();
-                    addSystemLog(`添加员工: ${name} (${id})`);
-                    
-                    // 同步到云端
-                    cloudSync.uploadAllData();
-                }
-            });
+    const name = employeeNameInput.value.trim();
+    const id = employeeIdInput.value.trim();
+    
+    // 输入验证
+    const validationError = validateEmployeeInput(name, id);
+    if (validationError) {
+        showNotification(validationError, 'error');
+        return;
+    }
+    
+    // 检查员工是否已存在
+    if (employees.some(emp => emp.id === id)) {
+        showNotification('该工号已存在', 'error');
+        return;
+    }
+    
+    // 添加员工到列表
+    employees.push({ name, id });
+    localStorage.setItem('employees', JSON.stringify(employees));
+    
+    // 生成微信可扫描的二维码URL
+    const successPageUrl = `https://irene329zx-ai.github.io/work/scan-success.html?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}`;
+    
+    // 生成二维码
+    qrPlaceholder.style.display = 'none';
+    
+    QRCode.toCanvas(document.getElementById('qrcode'), successPageUrl, {
+        width: 200,
+        margin: 1,
+        color: {
+            dark: '#000000',
+            light: '#FFFFFF'
         }
+    }, function(error) {
+        if (error) {
+            console.error(error);
+            showNotification('生成二维码失败', 'error');
+        } else {
+            showNotification('微信可扫描的二维码已生成！员工扫码后会自动记录考勤', 'success');
+            renderEmployeeList();
+            updateEmployeeSelect();
+            updateStats();
+            addSystemLog(`添加员工: ${name} (${id}) - 生成微信二维码`);
+            
+            // 同步到云端
+            cloudSync.uploadAllData();
+        }
+    });
+}
         
         // 输入验证
         function validateEmployeeInput(name, id) {
