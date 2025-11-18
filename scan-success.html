@@ -300,23 +300,22 @@ async function recordAttendance(employeeId, employeeName) {
     }
 }
 
-// 更新工作状态 - 核心逻辑
+// 更新工作状态 - 核心逻辑（修复版）
 async function updateWorkStatus(supabase, employeeId, employeeName) {
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
         
-        // 1. 获取员工当前的工作状态
-        const { data: currentRecord, error: fetchError } = await supabase
+        // 1. 获取员工当前的工作状态 - 修复：使用select().eq()而不是single()
+        const { data: currentRecords, error: fetchError } = await supabase
             .from('work_records')
             .select('*')
-            .eq('employee_id', employeeId)
-            .single();
+            .eq('employee_id', employeeId);
 
-        // 如果记录不存在，不算错误，我们创建新记录
-        if (fetchError && !fetchError.message.includes('不存在')) {
-            throw fetchError;
+        if (fetchError) {
+            throw new Error(`查询工作记录失败: ${fetchError.message}`);
         }
 
+        const currentRecord = currentRecords && currentRecords.length > 0 ? currentRecords[0] : null;
         const now = new Date().toISOString();
         let action = '';
         let newRecord = {};
@@ -337,6 +336,7 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
                 is_working: false,
                 start_time: null,
                 total_hours: newTotalHours,
+                today_hours: parseFloat(currentRecord.today_hours) || 0, // 添加今日工时
                 last_updated: now,
                 history: [
                     ...(currentRecord.history || []),
@@ -358,6 +358,7 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
                 is_working: true,
                 start_time: now,
                 total_hours: currentRecord ? parseFloat(currentRecord.total_hours) : 0,
+                today_hours: currentRecord ? parseFloat(currentRecord.today_hours) : 0, // 添加今日工时
                 last_updated: now,
                 history: [
                     ...(currentRecord?.history || []),
@@ -375,8 +376,7 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
         const { data: workData, error: workError } = await supabase
             .from('work_records')
             .upsert(newRecord, { 
-                onConflict: 'employee_id',
-                ignoreDuplicates: false 
+                onConflict: 'employee_id'
             })
             .select();
 
@@ -393,6 +393,7 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
 
     } catch (error) {
         console.error('更新工作状态失败:', error);
+        showDebug('errorDebug', '更新工作状态详细错误: ' + error.message);
         return {
             success: false,
             error: error.message
@@ -408,6 +409,7 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 </body>
 </html>
+
 
 
 
