@@ -6,6 +6,7 @@
     <title>员工工时管理系统</title>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.0/build/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
     <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
     <style>
         * {
@@ -446,6 +447,40 @@
             50% { opacity: 0.4; }
             100% { opacity: 1; }
         }
+
+        /* 工程师管理样式 */
+        .engineer-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .engineer-info {
+            flex-grow: 1;
+        }
+
+        .engineer-name {
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .engineer-openid {
+            color: #7f8c8d;
+            font-size: 12px;
+            margin-top: 3px;
+        }
+
+        .scanner-badge {
+            display: inline-block;
+            background: #e67e22;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            margin-left: 8px;
+        }
     </style>
 </head>
 <body>
@@ -458,6 +493,7 @@
         <div class="tab-container">
             <div class="tab active" data-tab="employee-tab">员工录入</div>
             <div class="tab" data-tab="admin-tab">后台管理</div>
+            <div class="tab" data-tab="engineer-tab">工程师管理</div>
             <div class="tab" data-tab="data-tab">云端管理</div>
         </div>
         
@@ -512,14 +548,6 @@
                             <!-- 工时排行将通过JavaScript动态生成 -->
                         </div>
                     </div>
-
-                    <!-- 微信扫码记录 -->
-                    <div class="card">
-                        <h2>最近微信扫码记录</h2>
-                        <div class="recent-activity" id="wechatScansList">
-                            <!-- 微信扫码记录将通过JavaScript动态生成 -->
-                        </div>
-                    </div>
                 </div>
                 
                 <div class="right-column">
@@ -544,6 +572,60 @@
                         
                         <div class="work-history" id="workHistory">
                             <!-- 工作历史记录将通过JavaScript动态生成 -->
+                        </div>
+                    </div>
+
+                    <!-- 微信扫码记录 -->
+                    <div class="card">
+                        <h2>最近微信扫码记录 <span class="scanner-badge">含扫描者信息</span></h2>
+                        <div class="recent-activity" id="wechatScansList">
+                            <!-- 微信扫码记录将通过JavaScript动态生成 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 工程师管理页面 -->
+        <div id="engineer-tab" class="tab-content">
+            <div class="main-content">
+                <div class="left-column">
+                    <div class="card">
+                        <h2>工程师身份绑定</h2>
+                        <div class="form-group">
+                            <label for="engineerName">工程师姓名</label>
+                            <input type="text" id="engineerName" placeholder="请输入工程师姓名">
+                        </div>
+                        <div class="action-buttons">
+                            <button id="generateEngineerQR" class="secondary">生成工程师绑定二维码</button>
+                        </div>
+                        
+                        <div class="qr-container">
+                            <p id="engineerQRPlaceholder">工程师绑定二维码将显示在这里</p>
+                            <canvas id="engineerQrcode"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="right-column">
+                    <div class="card">
+                        <h2>已绑定工程师</h2>
+                        <div class="employee-list" id="engineerList">
+                            <!-- 工程师列表将通过JavaScript动态生成 -->
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h2>扫描统计</h2>
+                        <div class="stats-container">
+                            <div class="stat-card">
+                                <div class="stat-label">总工程师</div>
+                                <div class="stat-value" id="totalEngineers">0</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">今日扫描</div>
+                                <div class="stat-value" id="todayScans">0</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -735,10 +817,32 @@
                             }
                         });
 
+                    // 订阅 engineers 表的变化
+                    const engineersSubscription = this.supabase
+                        .channel('engineers-changes')
+                        .on(
+                            'postgres_changes',
+                            {
+                                event: '*',
+                                schema: 'public',
+                                table: 'engineers'
+                            },
+                            (payload) => {
+                                console.log('engineers 发生变化:', payload);
+                                this.handleEngineersChange(payload);
+                            }
+                        )
+                        .subscribe((status) => {
+                            if (status === 'SUBSCRIBED') {
+                                console.log('实时订阅 engineers 已开启');
+                            }
+                        });
+
                     this.realtimeSubscriptions = [
                         workRecordsSubscription,
                         employeesSubscription,
-                        wechatScansSubscription
+                        wechatScansSubscription,
+                        engineersSubscription
                     ];
 
                     this.isRealtimeEnabled = true;
@@ -896,6 +1000,39 @@
                 }
             }
 
+            // 处理工程师变化
+            handleEngineersChange(payload) {
+                const { eventType, new: newEngineer, old: oldEngineer } = payload;
+                
+                switch (eventType) {
+                    case 'INSERT':
+                    case 'UPDATE':
+                        if (newEngineer) {
+                            // 更新本地 engineers 数组
+                            const index = engineers.findIndex(eng => eng.openid === newEngineer.openid);
+                            if (index >= 0) {
+                                engineers[index] = newEngineer;
+                            } else {
+                                engineers.push(newEngineer);
+                            }
+                            
+                            localStorage.setItem('engineers', JSON.stringify(engineers));
+                            renderEngineerList();
+                            updateEngineerStats();
+                        }
+                        break;
+                        
+                    case 'DELETE':
+                        if (oldEngineer) {
+                            engineers = engineers.filter(eng => eng.openid !== oldEngineer.openid);
+                            localStorage.setItem('engineers', JSON.stringify(engineers));
+                            renderEngineerList();
+                            updateEngineerStats();
+                        }
+                        break;
+                }
+            }
+
             // 同步所有数据
             async syncAllData() {
                 if (!(await this.checkConnection())) {
@@ -905,12 +1042,21 @@
 
                 try {
                     // 从云端下载员工数据
-                    const { data: employees, error: empError } = await this.supabase
+                    const { data: employeesData, error: empError } = await this.supabase
                         .from('employees')
                         .select('*');
                     
-                    if (!empError && employees && employees.length > 0) {
-                        localStorage.setItem('employees', JSON.stringify(employees));
+                    if (!empError && employeesData && employeesData.length > 0) {
+                        localStorage.setItem('employees', JSON.stringify(employeesData));
+                    }
+
+                    // 从云端下载工程师数据
+                    const { data: engineersData, error: engError } = await this.supabase
+                        .from('engineers')
+                        .select('*');
+                    
+                    if (!engError && engineersData) {
+                        localStorage.setItem('engineers', JSON.stringify(engineersData));
                     }
 
                     // 从云端下载工时记录
@@ -978,6 +1124,27 @@
                 }
             }
 
+            // 上传工程师数据
+            async uploadEngineers() {
+                if (!this.isOnline) return false;
+
+                try {
+                    const engineers = JSON.parse(localStorage.getItem('engineers')) || [];
+                    
+                    if (engineers.length > 0) {
+                        const { error } = await this.supabase
+                            .from('engineers')
+                            .upsert(engineers, { onConflict: 'openid' });
+                        
+                        if (error) throw error;
+                    }
+                    return true;
+                } catch (error) {
+                    console.error('上传工程师数据失败:', error);
+                    return false;
+                }
+            }
+
             // 上传工时记录
             async uploadWorkRecords() {
                 if (!this.isOnline) return false;
@@ -1021,6 +1188,7 @@
 
                 try {
                     await this.uploadEmployees();
+                    await this.uploadEngineers();
                     await this.uploadWorkRecords();
                     console.log('所有数据已上传到云端');
                     showNotification('数据已同步到云端', 'success');
@@ -1128,6 +1296,7 @@
         // 全局变量
         let employees = JSON.parse(localStorage.getItem('employees')) || [];
         let workRecords = JSON.parse(localStorage.getItem('workRecords')) || {};
+        let engineers = JSON.parse(localStorage.getItem('engineers')) || [];
         let systemLogs = JSON.parse(localStorage.getItem('systemLogs')) || [];
         let currentEmployeeId = null;
         let lastWechatScanCheck = 0;
@@ -1162,6 +1331,13 @@
         const checkUpdatesBtn = document.getElementById('checkUpdates');
         const toggleRealtimeBtn = document.getElementById('toggleRealtime');
         const wechatScansList = document.getElementById('wechatScansList');
+        const engineerNameInput = document.getElementById('engineerName');
+        const generateEngineerQRBtn = document.getElementById('generateEngineerQR');
+        const engineerQRContainer = document.getElementById('engineerQrcode');
+        const engineerQRPlaceholder = document.getElementById('engineerQRPlaceholder');
+        const engineerList = document.getElementById('engineerList');
+        const totalEngineersSpan = document.getElementById('totalEngineers');
+        const todayScansSpan = document.getElementById('todayScans');
         
         // 时间格式化函数
         function formatDateTime(timestamp) {
@@ -1224,6 +1400,7 @@
             // 重新加载本地数据（可能已被云端数据更新）
             employees = JSON.parse(localStorage.getItem('employees')) || [];
             workRecords = JSON.parse(localStorage.getItem('workRecords')) || [];
+            engineers = JSON.parse(localStorage.getItem('engineers')) || [];
             
             renderEmployeeList();
             updateEmployeeSelect();
@@ -1231,6 +1408,8 @@
             updateStats();
             renderSystemLogs();
             loadWechatScans();
+            renderEngineerList();
+            updateEngineerStats();
             
             // 生成二维码按钮事件
             generateQRBtn.addEventListener('click', generateQRCode);
@@ -1242,6 +1421,9 @@
             startWorkBtn.addEventListener('click', startWork);
             pauseWorkBtn.addEventListener('click', pauseWork);
             saveWorkBtn.addEventListener('click', saveWork);
+            
+            // 工程师二维码生成按钮事件
+            generateEngineerQRBtn.addEventListener('click', generateEngineerQRCode);
             
             // 员工选择变化事件
             selectedEmployeeSelect.addEventListener('change', function() {
@@ -1260,11 +1442,14 @@
                 // 重新加载数据并更新UI
                 employees = JSON.parse(localStorage.getItem('employees')) || [];
                 workRecords = JSON.parse(localStorage.getItem('workRecords')) || [];
+                engineers = JSON.parse(localStorage.getItem('engineers')) || [];
                 renderEmployeeList();
                 updateEmployeeSelect();
                 updateTotalHours();
                 updateStats();
                 loadWechatScans();
+                renderEngineerList();
+                updateEngineerStats();
             });
 
             // 检查更新按钮事件
@@ -1304,6 +1489,11 @@
                     if (tabId === 'admin-tab') {
                         loadWechatScans();
                     }
+
+                    // 如果切换到工程师管理，更新统计
+                    if (tabId === 'engineer-tab') {
+                        updateEngineerStats();
+                    }
                 });
             });
             
@@ -1323,7 +1513,7 @@
             addSystemLog('系统初始化完成');
         });
         
-        // 生成二维码
+        // 生成员工二维码
         function generateQRCode() {
             const name = employeeNameInput.value.trim();
             const id = employeeIdInput.value.trim();
@@ -1345,8 +1535,8 @@
             employees.push({ name, id });
             localStorage.setItem('employees', JSON.stringify(employees));
             
-            // 生成微信可扫描的二维码URL
-            const successPageUrl = `https://irene329zx-ai.github.io/work/scan-success.html?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}`;
+            // 生成微信可扫描的二维码URL - 包含工程师授权信息
+            const successPageUrl = `https://irene329zx-ai.github.io/work/scan-success.html?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}&auth_type=wechat`;
             
             // 生成二维码
             qrPlaceholder.style.display = 'none';
@@ -1371,6 +1561,39 @@
                     
                     // 同步到云端
                     cloudSync.uploadAllData();
+                }
+            });
+        }
+
+        // 生成工程师绑定二维码
+        function generateEngineerQRCode() {
+            const name = engineerNameInput.value.trim();
+            
+            if (!name) {
+                showNotification('请输入工程师姓名', 'error');
+                return;
+            }
+            
+            // 生成工程师绑定二维码URL
+            const bindPageUrl = `https://irene329zx-ai.github.io/work/engineer-bind.html?engineer_name=${encodeURIComponent(name)}`;
+            
+            // 生成二维码
+            engineerQRPlaceholder.style.display = 'none';
+            
+            QRCode.toCanvas(document.getElementById('engineerQrcode'), bindPageUrl, {
+                width: 200,
+                margin: 1,
+                color: {
+                    dark: '#000000',
+                    light: '#FFFFFF'
+                }
+            }, function(error) {
+                if (error) {
+                    console.error(error);
+                    showNotification('生成二维码失败', 'error');
+                } else {
+                    showNotification('工程师绑定二维码已生成！请让工程师用微信扫描', 'success');
+                    addSystemLog(`生成工程师绑定二维码: ${name}`);
                 }
             });
         }
@@ -1461,6 +1684,78 @@
                     deleteEmployee(employeeId);
                 });
             });
+        }
+
+        // 渲染工程师列表
+        function renderEngineerList() {
+            engineerList.innerHTML = '';
+            
+            if (engineers.length === 0) {
+                engineerList.innerHTML = '<div class="empty-state">暂无工程师信息</div>';
+                return;
+            }
+            
+            engineers.forEach(engineer => {
+                const engineerItem = document.createElement('div');
+                engineerItem.className = 'engineer-item';
+                
+                engineerItem.innerHTML = `
+                    <div class="engineer-info">
+                        <div class="engineer-name">${engineer.name}</div>
+                        <div class="engineer-openid">OpenID: ${engineer.openid ? engineer.openid.substring(0, 10) + '...' : '未绑定'}</div>
+                    </div>
+                    <div class="employee-actions">
+                        <button class="delete-btn" data-openid="${engineer.openid}">删除</button>
+                    </div>
+                `;
+                
+                engineerList.appendChild(engineerItem);
+            });
+            
+            // 添加删除按钮事件
+            document.querySelectorAll('.engineer-item .delete-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const openid = this.getAttribute('data-openid');
+                    deleteEngineer(openid);
+                });
+            });
+        }
+
+        // 删除工程师
+        function deleteEngineer(openid) {
+            if (confirm('确定要删除该工程师吗？')) {
+                const engineer = engineers.find(eng => eng.openid === openid);
+                
+                // 从工程师列表中移除
+                engineers = engineers.filter(eng => eng.openid !== openid);
+                localStorage.setItem('engineers', JSON.stringify(engineers));
+                
+                // 更新UI
+                renderEngineerList();
+                updateEngineerStats();
+                
+                showNotification('工程师已删除', 'success');
+                addSystemLog(`删除工程师: ${engineer.name}`);
+                
+                // 从云端删除
+                cloudSync.supabase
+                    .from('engineers')
+                    .delete()
+                    .eq('openid', openid);
+            }
+        }
+
+        // 更新工程师统计
+        function updateEngineerStats() {
+            totalEngineersSpan.textContent = engineers.length;
+            
+            // 计算今日扫描次数
+            const today = new Date().toDateString();
+            const todayScansCount = engineers.reduce((count, engineer) => {
+                return count + (engineer.last_scan && new Date(engineer.last_scan).toDateString() === today ? 1 : 0);
+            }, 0);
+            
+            todayScansSpan.textContent = todayScansCount;
         }
         
         // 计算员工今日工时
@@ -1889,9 +2184,16 @@
                 const employeeName = employee ? employee.name : scan.employee_id;
                 const scanTime = new Date(scan.scan_time).toLocaleString('zh-CN');
 
+                // 显示扫描者信息
+                const scannerInfo = scan.scanner_name ? 
+                    `<div style="color: #e67e22; font-size: 12px; margin-top: 3px;">
+                        扫描者: ${scan.scanner_name}
+                    </div>` : '';
+
                 scanItem.innerHTML = `
                     <div><strong>${employeeName}</strong> (${scan.employee_id})</div>
                     <div class="wechat-scan-time">${scanTime}</div>
+                    ${scannerInfo}
                 `;
 
                 wechatScansList.appendChild(scanItem);
@@ -1938,7 +2240,8 @@
                     // 显示通知
                     const employee = employees.find(emp => emp.id === latestScan.employee_id);
                     if (employee) {
-                        showNotification(`员工 ${employee.name} 微信扫码考勤已更新`, 'success');
+                        const scannerInfo = latestScan.scanner_name ? ` (扫描者: ${latestScan.scanner_name})` : '';
+                        showNotification(`员工 ${employee.name} 微信扫码考勤已更新${scannerInfo}`, 'success');
                     }
                 }
             } catch (error) {
