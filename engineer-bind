@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>工程师身份绑定</title>
+    <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+        }
+        .icon {
+            font-size: 60px;
+            margin-bottom: 20px;
+        }
+        .success { color: #4CAF50; }
+        .error { color: #e74c3c; }
+        .loading { color: #3498db; }
+        h1 { color: #333; margin-bottom: 15px; }
+        .info { background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; }
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div id="loadingState">
+            <div class="icon loading">⏳</div>
+            <h1>身份绑定中...</h1>
+            <p>正在获取您的微信身份信息</p>
+        </div>
+
+        <div id="successState" style="display: none;">
+            <div class="icon success">✅</div>
+            <h1>绑定成功</h1>
+            <div class="info">
+                <div style="font-size: 18px; font-weight: bold;" id="engineerName">--</div>
+                <div style="color: #666;" id="engineerOpenid">OpenID: --</div>
+            </div>
+            <p style="color: #999;">您现在可以扫描员工二维码进行考勤登记了</p>
+            <button onclick="window.close()">关闭页面</button>
+        </div>
+
+        <div id="errorState" style="display: none;">
+            <div class="icon error">❌</div>
+            <h1>绑定失败</h1>
+            <p id="errorMessage">系统错误</p>
+            <button onclick="retryBind()">重试</button>
+        </div>
+    </div>
+
+<script>
+// 获取URL参数
+function getUrlParams() {
+    const params = new URLSearchParams(window.location.search);
+    return {
+        engineer_name: params.get('engineer_name')
+    };
+}
+
+// 显示状态
+function showState(state) {
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('successState').style.display = 'none';
+    document.getElementById('errorState').style.display = 'none';
+    document.getElementById(state + 'State').style.display = 'block';
+}
+
+// 显示错误
+function showError(message) {
+    document.getElementById('errorMessage').textContent = message;
+    showState('error');
+}
+
+// 重试绑定
+function retryBind() {
+    showState('loading');
+    setTimeout(init, 500);
+}
+
+// 微信登录获取用户信息
+async function wechatLogin() {
+    return new Promise((resolve, reject) => {
+        // 这里需要配置微信JS-SDK
+        wx.ready(function() {
+            wx.getUserInfo({
+                success: function(res) {
+                    resolve({
+                        openid: res.userInfo.openId, // 实际项目中需要通过后端获取openid
+                        nickname: res.userInfo.nickName,
+                        headimgurl: res.userInfo.headImgUrl
+                    });
+                },
+                fail: function(err) {
+                    reject(new Error('微信授权失败: ' + JSON.stringify(err)));
+                }
+            });
+        });
+        
+        wx.error(function(err) {
+            reject(new Error('微信JS-SDK加载失败: ' + JSON.stringify(err)));
+        });
+    });
+}
+
+// 绑定工程师身份
+async function bindEngineer(engineerName, userInfo) {
+    try {
+        const supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+        const engineerData = {
+            name: engineerName,
+            openid: userInfo.openid,
+            nickname: userInfo.nickname,
+            avatar: userInfo.headimgurl,
+            bind_time: new Date().toISOString()
+        };
+
+        const { data, error } = await supabase
+            .from('engineers')
+            .upsert(engineerData, { onConflict: 'openid' })
+            .select();
+
+        if (error) throw error;
+
+        return data;
+    } catch (error) {
+        throw new Error('绑定工程师失败: ' + error.message);
+    }
+}
+
+// 主初始化函数
+async function init() {
+    const params = getUrlParams();
+    
+    if (!params.engineer_name) {
+        showError('缺少工程师姓名参数');
+        return;
+    }
+
+    try {
+        // 获取微信用户信息
+        const userInfo = await wechatLogin();
+        
+        // 绑定工程师身份
+        const result = await bindEngineer(params.engineer_name, userInfo);
+        
+        // 显示成功
+        document.getElementById('engineerName').textContent = params.engineer_name;
+        document.getElementById('engineerOpenid').textContent = `OpenID: ${userInfo.openid.substring(0, 10)}...`;
+        showState('success');
+        
+    } catch (error) {
+        console.error('绑定失败:', error);
+        showError(error.message);
+    }
+}
+
+// 页面加载时启动
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(init, 100);
+});
+</script>
+</body>
+</html>
