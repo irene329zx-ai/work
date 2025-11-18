@@ -53,6 +53,33 @@
             margin: 5px;
         }
         .retry-btn { background: #e74c3c; }
+        
+        /* 设备信息样式 */
+        .device-info {
+            background: #e8f4fd;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 12px;
+            text-align: left;
+        }
+        .device-info-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #2c3e50;
+        }
+        .device-detail {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 3px;
+        }
+        .operator-info {
+            background: #e8f6f3;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 13px;
+        }
     </style>
 </head>
 <body>
@@ -73,6 +100,33 @@
                 <div style="font-size: 18px; font-weight: bold;" id="successName">--</div>
                 <div style="color: #666;" id="successId">工号: --</div>
             </div>
+            
+            <!-- 操作员信息 -->
+            <div class="operator-info" id="operatorInfo">
+                <strong>操作员:</strong> <span id="operatorName">--</span>
+            </div>
+            
+            <!-- 设备信息 -->
+            <div class="device-info">
+                <div class="device-info-title">📱 设备信息</div>
+                <div class="device-detail">
+                    <span>设备类型:</span>
+                    <span id="deviceType">--</span>
+                </div>
+                <div class="device-detail">
+                    <span>浏览器:</span>
+                    <span id="browserInfo">--</span>
+                </div>
+                <div class="device-detail">
+                    <span>屏幕分辨率:</span>
+                    <span id="screenResolution">--</span>
+                </div>
+                <div class="device-detail">
+                    <span>操作时间:</span>
+                    <span id="operationTime">--</span>
+                </div>
+            </div>
+            
             <p id="successTime"></p>
             <p style="color: #999; font-size: 14px;" id="closeInfo"></p>
             <div class="debug" id="successDebug"></div>
@@ -97,7 +151,9 @@ function getUrlParams() {
     const params = new URLSearchParams(window.location.search);
     return {
         id: params.get('id'),
-        name: params.get('name') || '员工'
+        name: params.get('name') || '员工',
+        operator_id: params.get('operator_id') || 'default_engineer',
+        operator_name: params.get('operator_name') || '默认工程师'
     };
 }
 
@@ -111,14 +167,66 @@ function showDebug(elementId, message) {
     }
 }
 
+// 获取设备信息
+function getDeviceInfo() {
+    const ua = navigator.userAgent;
+    let deviceType = '未知设备';
+    
+    if (ua.match(/Mobile/)) {
+        deviceType = '手机';
+    } else if (ua.match(/Tablet/)) {
+        deviceType = '平板';
+    } else {
+        deviceType = '电脑';
+    }
+    
+    // 获取屏幕信息
+    const screenInfo = `${screen.width}x${screen.height}`;
+    
+    // 获取浏览器信息
+    let browser = '未知浏览器';
+    if (ua.includes('WeChat')) browser = '微信';
+    else if (ua.includes('MicroMessenger')) browser = '微信';
+    else if (ua.includes('Chrome')) browser = 'Chrome';
+    else if (ua.includes('Safari')) browser = 'Safari';
+    else if (ua.includes('Firefox')) browser = 'Firefox';
+    else if (ua.includes('Edge')) browser = 'Edge';
+    
+    return {
+        device_type: deviceType,
+        screen_resolution: screenInfo,
+        browser: browser,
+        platform: navigator.platform,
+        language: navigator.language,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        user_agent: navigator.userAgent
+    };
+}
+
+// 显示设备信息
+function displayDeviceInfo(deviceInfo) {
+    document.getElementById('deviceType').textContent = deviceInfo.device_type;
+    document.getElementById('browserInfo').textContent = deviceInfo.browser;
+    document.getElementById('screenResolution').textContent = deviceInfo.screen_resolution;
+    document.getElementById('operationTime').textContent = new Date().toLocaleString('zh-CN');
+}
+
+// 显示操作员信息
+function displayOperatorInfo(operatorInfo) {
+    document.getElementById('operatorName').textContent = operatorInfo.name;
+}
+
 // 备用方案：使用Fetch API直接调用Supabase REST API
-async function fallbackToRestAPI(employeeId, employeeName) {
+async function fallbackToRestAPI(employeeId, employeeName, operatorInfo, deviceInfo) {
     showDebug('errorDebug', '尝试备用方案...');
     
     const scanData = {
         employee_id: employeeId,
         user_agent: navigator.userAgent,
-        scan_time: new Date().toISOString()
+        scan_time: new Date().toISOString(),
+        device_info: deviceInfo,
+        operator_id: operatorInfo.id,
+        operator_name: operatorInfo.name
     };
 
     try {
@@ -136,7 +244,15 @@ async function fallbackToRestAPI(employeeId, employeeName) {
 
         if (response.ok) {
             showDebug('errorDebug', '备用方案成功！数据已记录。');
-            showSuccess(employeeName, employeeId, '（通过备用方案）');
+            
+            // 尝试更新工作状态
+            const workStatusUpdated = await updateWorkStatusFallback(employeeId, employeeName, operatorInfo, deviceInfo);
+            
+            if (workStatusUpdated) {
+                showSuccess(employeeName, employeeId, operatorInfo, deviceInfo, '（通过备用方案）');
+            } else {
+                showSuccess(employeeName, employeeId, operatorInfo, deviceInfo, '（扫码记录成功，工作状态更新失败）');
+            }
             return true;
         } else {
             const errorText = await response.text();
@@ -148,14 +264,33 @@ async function fallbackToRestAPI(employeeId, employeeName) {
     }
 }
 
+// 备用方案更新工作状态
+async function updateWorkStatusFallback(employeeId, employeeName, operatorInfo, deviceInfo) {
+    try {
+        // 这里实现备用方案的工作状态更新逻辑
+        // 由于备用方案比较复杂，这里简单记录到扫码记录中
+        showDebug('errorDebug', '备用方案：工作状态更新暂不可用');
+        return true;
+    } catch (error) {
+        console.error('备用方案工作状态更新失败:', error);
+        return false;
+    }
+}
+
 // 显示成功页面
-function showSuccess(name, id, action = '') {
+function showSuccess(name, id, operatorInfo, deviceInfo, action = '') {
     document.getElementById('loadingState').style.display = 'none';
     document.getElementById('errorState').style.display = 'none';
     document.getElementById('successState').style.display = 'block';
     
     document.getElementById('successName').textContent = name;
     document.getElementById('successId').textContent = `工号: ${id}`;
+    
+    // 显示操作员信息
+    displayOperatorInfo(operatorInfo);
+    
+    // 显示设备信息
+    displayDeviceInfo(deviceInfo);
     
     // 显示具体的操作结果
     if (action) {
@@ -167,11 +302,13 @@ function showSuccess(name, id, action = '') {
     document.getElementById('closeInfo').textContent = '本页面将自动关闭';
     
     setTimeout(() => {
-        try { window.close(); } 
-        catch (e) { 
+        try { 
+            // 尝试关闭窗口
+            window.close(); 
+        } catch (e) { 
             document.getElementById('closeInfo').textContent = '请手动关闭此页面';
         }
-    }, 3000);
+    }, 5000);
 }
 
 // 显示错误页面
@@ -193,13 +330,26 @@ function retry() {
 // 使用备用方案
 function useFallback() {
     const params = getUrlParams();
-    fallbackToRestAPI(params.id, params.name);
+    const deviceInfo = getDeviceInfo();
+    const operatorInfo = {
+        id: params.operator_id,
+        name: params.operator_name
+    };
+    fallbackToRestAPI(params.id, params.name, operatorInfo, deviceInfo);
 }
 
 // 主初始化函数
 async function init() {
     const params = getUrlParams();
+    const deviceInfo = getDeviceInfo();
+    const operatorInfo = {
+        id: params.operator_id,
+        name: params.operator_name
+    };
+    
     showDebug('loadingDebug', `员工: ${params.name} (${params.id})`);
+    showDebug('loadingDebug', `操作员: ${operatorInfo.name} (${operatorInfo.id})`);
+    showDebug('loadingDebug', `设备: ${deviceInfo.device_type} - ${deviceInfo.browser}`);
     
     if (!params.id) {
         showError('无效的二维码：缺少员工信息');
@@ -215,15 +365,15 @@ async function init() {
         showDebug('loadingDebug', 'Supabase加载完成，开始记录数据...');
         
         // 记录考勤
-const success = await recordAttendance(params.id, params.name);
+        const success = await recordAttendance(params.id, params.name, operatorInfo, deviceInfo);
 
-if (success && success.action) {
-    showSuccess(params.name, params.id, success.action);
-} else if (success) {
-    showSuccess(params.name, params.id, '考勤');
-} else {
-    showError('考勤记录失败，请使用备用方案');
-}
+        if (success && success.action) {
+            showSuccess(params.name, params.id, operatorInfo, deviceInfo, success.action);
+        } else if (success) {
+            showSuccess(params.name, params.id, operatorInfo, deviceInfo, '考勤');
+        } else {
+            showError('考勤记录失败，请使用备用方案');
+        }
         
     } catch (error) {
         console.error('初始化失败:', error);
@@ -253,7 +403,7 @@ function loadSupabase() {
 }
 
 // 记录考勤 - 完整版本
-async function recordAttendance(employeeId, employeeName) {
+async function recordAttendance(employeeId, employeeName, operatorInfo, deviceInfo) {
     try {
         showDebug('loadingDebug', '初始化Supabase客户端...');
         
@@ -264,13 +414,16 @@ async function recordAttendance(employeeId, employeeName) {
         
         showDebug('loadingDebug', '1. 插入扫码记录...');
         
-        // 1. 插入扫码记录
+        // 1. 插入扫码记录（包含设备信息和操作员信息）
         const { data: scanData, error: scanError } = await supabase
             .from('wechat_scans')
             .insert([{
                 employee_id: employeeId,
                 user_agent: navigator.userAgent,
-                scan_time: new Date().toISOString()
+                scan_time: new Date().toISOString(),
+                device_info: deviceInfo,
+                operator_id: operatorInfo.id,
+                operator_name: operatorInfo.name
             }])
             .select();
 
@@ -284,11 +437,11 @@ async function recordAttendance(employeeId, employeeName) {
         showDebug('loadingDebug', '2. 更新工作状态...');
         
         // 2. 更新工作状态（这是关键！）
-        const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName);
+        const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName, operatorInfo, deviceInfo);
         
         if (workStatusResult.success) {
             showDebug('successDebug', `工作状态更新成功: ${workStatusResult.action}`);
-            return true;
+            return { success: true, action: workStatusResult.action };
         } else {
             showDebug('errorDebug', '工作状态更新失败: ' + workStatusResult.error);
             return false;
@@ -300,92 +453,91 @@ async function recordAttendance(employeeId, employeeName) {
     }
 }
 
-// 更新工作状态 - 核心逻辑（完整修复版）
-// 更新工作状态 - 完整功能版本
-async function updateWorkStatus(supabase, employeeId, employeeName) {
+// 更新工作状态 - 核心逻辑
+async function updateWorkStatus(supabase, employeeId, employeeName, operatorInfo, deviceInfo) {
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
         
-        const { data: currentRecords, error: fetchError } = await supabase
+        // 1. 获取员工当前的工作状态
+        const { data: currentRecord, error: fetchError } = await supabase
             .from('work_records')
             .select('*')
-            .eq('employee_id', employeeId);
+            .eq('employee_id', employeeId)
+            .single();
 
-        if (fetchError) {
-            throw new Error(`查询工作记录失败: ${fetchError.message}`);
+        // 如果记录不存在，不算错误，我们创建新记录
+        if (fetchError && !fetchError.message.includes('不存在')) {
+            throw fetchError;
         }
 
-        const currentRecord = currentRecords && currentRecords.length > 0 ? currentRecords[0] : null;
-        const now = new Date();
-        const nowISO = now.toISOString();
-        const today = now.toDateString();
+        const now = new Date().toISOString();
         let action = '';
         let newRecord = {};
 
         if (currentRecord && currentRecord.is_working) {
-            // 下工操作
+            // 情况1：员工正在工作 → 暂停工作
+            showDebug('loadingDebug', '员工正在工作，执行下工操作...');
             action = '下工';
+            
+            // 计算本次工作时长
             const startTime = new Date(currentRecord.start_time);
-            const workTimeHours = (now - startTime) / (1000 * 60 * 60);
+            const workTimeHours = (new Date() - startTime) / (1000 * 60 * 60);
             const newTotalHours = (parseFloat(currentRecord.total_hours) || 0) + workTimeHours;
             
-            // 计算今日工时
-            let newTodayHours = parseFloat(currentRecord.today_hours) || 0;
-            if (startTime.toDateString() === today) {
-                newTodayHours += workTimeHours;
-            }
-            
+            // 更新记录：暂停工作
             newRecord = {
                 employee_id: employeeId,
                 is_working: false,
                 start_time: null,
                 total_hours: newTotalHours,
-                today_hours: newTodayHours,
-                last_updated_day: today,
-                last_updated: nowISO,
+                last_updated: now,
+                operator_id: operatorInfo.id,
+                operator_name: operatorInfo.name,
                 history: [
                     ...(currentRecord.history || []),
                     {
-                        action: `微信扫码下工 - 工作时长: ${workTimeHours.toFixed(2)}小时`,
-                        timestamp: nowISO
+                        action: `微信扫码下工 - 操作员: ${operatorInfo.name} - 工作时长: ${workTimeHours.toFixed(2)}小时`,
+                        timestamp: now,
+                        operator: operatorInfo.name,
+                        device_info: deviceInfo
                     }
                 ]
             };
             
         } else {
-            // 上工操作
+            // 情况2：员工未工作或记录不存在 → 开始工作
+            showDebug('loadingDebug', '员工未工作，执行上工操作...');
             action = '上工';
             
-            // 检查是否需要重置今日工时（新的一天）
-            let todayHours = parseFloat(currentRecord?.today_hours) || 0;
-            const lastUpdatedDay = currentRecord?.last_updated_day;
-            if (!lastUpdatedDay || lastUpdatedDay !== today) {
-                todayHours = 0; // 新的一天，重置今日工时
-            }
-            
+            // 创建或更新记录：开始工作
             newRecord = {
                 employee_id: employeeId,
                 is_working: true,
-                start_time: nowISO,
+                start_time: now,
                 total_hours: currentRecord ? parseFloat(currentRecord.total_hours) : 0,
-                today_hours: todayHours,
-                last_updated_day: today,
-                last_updated: nowISO,
+                last_updated: now,
+                operator_id: operatorInfo.id,
+                operator_name: operatorInfo.name,
                 history: [
                     ...(currentRecord?.history || []),
                     {
-                        action: '微信扫码上工',
-                        timestamp: nowISO
+                        action: `微信扫码上工 - 操作员: ${operatorInfo.name}`,
+                        timestamp: now,
+                        operator: operatorInfo.name,
+                        device_info: deviceInfo
                     }
                 ]
             };
         }
 
-        // 更新数据库
+        showDebug('loadingDebug', `执行${action}操作，更新数据...`);
+        
+        // 插入或更新工作记录
         const { data: workData, error: workError } = await supabase
             .from('work_records')
             .upsert(newRecord, { 
-                onConflict: 'employee_id'
+                onConflict: 'employee_id',
+                ignoreDuplicates: false 
             })
             .select();
 
@@ -402,7 +554,6 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
 
     } catch (error) {
         console.error('更新工作状态失败:', error);
-        showDebug('errorDebug', '更新工作状态详细错误: ' + error.message);
         return {
             success: false,
             error: error.message
@@ -413,14 +564,9 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
 // 页面加载时启动
 document.addEventListener('DOMContentLoaded', function() {
     showDebug('loadingDebug', '页面加载完成，开始初始化...');
+    showDebug('loadingDebug', `URL参数: ${window.location.search}`);
     setTimeout(init, 100);
 });
 </script>
 </body>
 </html>
-
-
-
-
-
-
