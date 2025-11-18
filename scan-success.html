@@ -243,7 +243,7 @@ function loadSupabase() {
     });
 }
 
-// 记录考勤
+// 记录考勤 - 完整版本
 async function recordAttendance(employeeId, employeeName) {
     try {
         showDebug('loadingDebug', '初始化Supabase客户端...');
@@ -251,13 +251,12 @@ async function recordAttendance(employeeId, employeeName) {
         // 初始化Supabase
         const supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
-        
         const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
         
-        showDebug('loadingDebug', '插入扫码记录...');
+        showDebug('loadingDebug', '1. 插入扫码记录...');
         
-        // 插入扫码记录
-        const { data, error } = await supabase
+        // 1. 插入扫码记录
+        const { data: scanData, error: scanError } = await supabase
             .from('wechat_scans')
             .insert([{
                 employee_id: employeeId,
@@ -266,19 +265,129 @@ async function recordAttendance(employeeId, employeeName) {
             }])
             .select();
 
-        if (error) {
-            showDebug('errorDebug', 'Supabase错误: ' + error.message);
-            // 尝试备用方案
-            return await fallbackToRestAPI(employeeId, employeeName);
+        if (scanError) {
+            showDebug('errorDebug', '扫码记录插入失败: ' + scanError.message);
+            // 继续尝试更新工作状态，不直接返回
+        } else {
+            showDebug('successDebug', '扫码记录插入成功');
         }
+
+        showDebug('loadingDebug', '2. 更新工作状态...');
         
-        showDebug('successDebug', '数据插入成功: ' + JSON.stringify(data));
-        return true;
+        // 2. 更新工作状态（这是关键！）
+        const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName);
+        
+        if (workStatusResult.success) {
+            showDebug('successDebug', `工作状态更新成功: ${workStatusResult.action}`);
+            return true;
+        } else {
+            showDebug('errorDebug', '工作状态更新失败: ' + workStatusResult.error);
+            return false;
+        }
         
     } catch (error) {
         showDebug('errorDebug', '记录考勤异常: ' + error.message);
-        // 尝试备用方案
-        return await fallbackToRestAPI(employeeId, employeeName);
+        return false;
+    }
+}
+
+// 更新工作状态 - 核心逻辑
+async function updateWorkStatus(supabase, employeeId, employeeName) {
+    try {
+        showDebug('loadingDebug', '获取当前工作状态...');
+        
+        // 1. 获取员工当前的工作状态
+        const { data: currentRecord, error: fetchError } = await supabase
+            .from('work_records')
+            .select('*')
+            .eq('employee_id', employeeId)
+            .single();
+
+        // 如果记录不存在，不算错误，我们创建新记录
+        if (fetchError && !fetchError.message.includes('不存在')) {
+            throw fetchError;
+        }
+
+        const now = new Date().toISOString();
+        let action = '';
+        let newRecord = {};
+
+        if (currentRecord && currentRecord.is_working) {
+            // 情况1：员工正在工作 → 暂停工作
+            showDebug('loadingDebug', '员工正在工作，执行下工操作...');
+            action = '下工';
+            
+            // 计算本次工作时长
+            const startTime = new Date(currentRecord.start_time);
+            const workTimeHours = (new Date() - startTime) / (1000 * 60 * 60);
+            const newTotalHours = (parseFloat(currentRecord.total_hours) || 0) + workTimeHours;
+            
+            // 更新记录：暂停工作
+            newRecord = {
+                employee_id: employeeId,
+                is_working: false,
+                start_time: null,
+                total_hours: newTotalHours,
+                last_updated: now,
+                history: [
+                    ...(currentRecord.history || []),
+                    {
+                        action: `微信扫码下工 - 工作时长: ${workTimeHours.toFixed(2)}小时`,
+                        timestamp: now
+                    }
+                ]
+            };
+            
+        } else {
+            // 情况2：员工未工作或记录不存在 → 开始工作
+            showDebug('loadingDebug', '员工未工作，执行上工操作...');
+            action = '上工';
+            
+            // 创建或更新记录：开始工作
+            newRecord = {
+                employee_id: employeeId,
+                is_working: true,
+                start_time: now,
+                total_hours: currentRecord ? parseFloat(currentRecord.total_hours) : 0,
+                last_updated: now,
+                history: [
+                    ...(currentRecord?.history || []),
+                    {
+                        action: '微信扫码上工',
+                        timestamp: now
+                    }
+                ]
+            };
+        }
+
+        showDebug('loadingDebug', `执行${action}操作，更新数据...`);
+        
+        // 插入或更新工作记录
+        const { data: workData, error: workError } = await supabase
+            .from('work_records')
+            .upsert(newRecord, { 
+                onConflict: 'employee_id',
+                ignoreDuplicates: false 
+            })
+            .select();
+
+        if (workError) {
+            throw new Error(`工作记录更新失败: ${workError.message}`);
+        }
+
+        showDebug('successDebug', `${action}操作成功完成`);
+        return {
+            success: true,
+            action: action,
+            data: workData
+        };
+
+    } catch (error) {
+        console.error('更新工作状态失败:', error);
+        return {
+            success: false,
+            error: error.message
+        };
     }
 }
 
@@ -290,3 +399,4 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 </body>
 </html>
+
