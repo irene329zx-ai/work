@@ -446,80 +446,6 @@
             50% { opacity: 0.4; }
             100% { opacity: 1; }
         }
-
-        /* 操作员记录样式 */
-        .operator-record-item {
-            padding: 12px 15px;
-            border-bottom: 1px solid #eee;
-            background: #f8f9fa;
-            margin-bottom: 8px;
-            border-radius: 8px;
-        }
-
-        .operator-record-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-        }
-
-        .operator-name {
-            font-weight: bold;
-            color: #3498db;
-        }
-
-        .operator-action {
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: bold;
-        }
-
-        .action-clock-in {
-            background: #e8f6f3;
-            color: #27ae60;
-        }
-
-        .action-clock-out {
-            background: #fdedec;
-            color: #e74c3c;
-        }
-
-        .operator-details {
-            font-size: 12px;
-            color: #7f8c8d;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 5px;
-        }
-
-        .device-info {
-            background: #fff3cd;
-            padding: 8px;
-            border-radius: 4px;
-            margin-top: 8px;
-            font-size: 11px;
-        }
-
-        .operator-stats-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 10px 0;
-            border-bottom: 1px solid #f0f0f0;
-        }
-
-        .operator-rank {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            background: #3498db;
-            color: white;
-            border-radius: 50%;
-            text-align: center;
-            line-height: 20px;
-            font-size: 12px;
-            margin-right: 8px;
-        }
     </style>
 </head>
 <body>
@@ -581,20 +507,17 @@
                     </div>
                     
                     <div class="card">
-                        <h2>今日操作员记录</h2>
-                        <div class="action-buttons">
-                            <button id="refreshOperatorRecords">刷新记录</button>
-                            <button id="exportOperatorRecords" class="secondary">导出记录</button>
-                        </div>
-                        <div class="operator-records" id="operatorRecordsList">
-                            <!-- 操作员记录将通过JavaScript动态生成 -->
-                        </div>
-                    </div>
-                    
-                    <div class="card">
                         <h2>今日工时排行</h2>
                         <div class="work-history" id="workRanking">
                             <!-- 工时排行将通过JavaScript动态生成 -->
+                        </div>
+                    </div>
+
+                    <!-- 微信扫码记录 -->
+                    <div class="card">
+                        <h2>最近微信扫码记录</h2>
+                        <div class="recent-activity" id="wechatScansList">
+                            <!-- 微信扫码记录将通过JavaScript动态生成 -->
                         </div>
                     </div>
                 </div>
@@ -621,14 +544,6 @@
                         
                         <div class="work-history" id="workHistory">
                             <!-- 工作历史记录将通过JavaScript动态生成 -->
-                        </div>
-                    </div>
-
-                    <!-- 微信扫码记录 -->
-                    <div class="card">
-                        <h2>最近微信扫码记录</h2>
-                        <div class="recent-activity" id="wechatScansList">
-                            <!-- 微信扫码记录将通过JavaScript动态生成 -->
                         </div>
                     </div>
                 </div>
@@ -674,23 +589,6 @@
                                 <div class="stat-label">活跃员工</div>
                                 <div class="stat-value" id="statActiveEmployees">0</div>
                             </div>
-                        </div>
-                    </div>
-                    
-                    <div class="card">
-                        <h2>操作员统计</h2>
-                        <div class="stats-container">
-                            <div class="stat-card">
-                                <div class="stat-label">今日操作员</div>
-                                <div class="stat-value" id="statTodayOperators">0</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-label">总操作次数</div>
-                                <div class="stat-value" id="statTotalOperations">0</div>
-                            </div>
-                        </div>
-                        <div class="operator-stats" id="operatorStatsList">
-                            <!-- 操作员统计详情 -->
                         </div>
                     </div>
                     
@@ -900,9 +798,7 @@
                                     isWorking: newRecord.is_working || false,
                                     startTime: newRecord.start_time ? new Date(newRecord.start_time).getTime() : null,
                                     history: newRecord.history || [],
-                                    lastUpdated: newRecord.last_updated || new Date().toISOString(),
-                                    operatorId: newRecord.operator_id,
-                                    operatorName: newRecord.operator_name
+                                    lastUpdated: newRecord.last_updated || new Date().toISOString()
                                 };
                                 
                                 // 保存到 localStorage
@@ -912,7 +808,6 @@
                                 renderEmployeeList();
                                 updateTotalHours();
                                 updateStats();
-                                loadOperatorRecords();
                                 
                                 showNotification(`员工 ${employeeId} 的工时记录已从云端更新`, 'success');
                                 addSystemLog(`云端同步: 员工 ${employeeId} 工时记录更新`);
@@ -927,7 +822,6 @@
                             renderEmployeeList();
                             updateTotalHours();
                             updateStats();
-                            loadOperatorRecords();
                             showNotification(`员工 ${oldRecord.employee_id} 的工时记录已从云端删除`, 'success');
                         }
                         break;
@@ -991,7 +885,6 @@
                         updateTotalHours();
                         updateStats();
                         loadWechatScans();
-                        loadOperatorRecords();
                         
                         // 显示通知
                         const employee = employees.find(emp => emp.id === scan.employee_id);
@@ -1050,9 +943,7 @@
                                 isWorking: record.is_working || false,
                                 startTime: record.start_time ? new Date(record.start_time).getTime() : null,
                                 history: record.history || [],
-                                lastUpdated: record.last_updated || new Date().toISOString(),
-                                operatorId: record.operator_id,
-                                operatorName: record.operator_name
+                                lastUpdated: record.last_updated || new Date().toISOString()
                             };
                         });
                         
@@ -1103,9 +994,7 @@
                             is_working: record.isWorking || false,
                             start_time: record.startTime ? new Date(record.startTime).toISOString() : null,
                             history: record.history || [],
-                            last_updated: new Date().toISOString(),
-                            operator_id: record.operatorId || 'default_engineer',
-                            operator_name: record.operatorName || '默认工程师'
+                            last_updated: new Date().toISOString()
                         });
                     }
 
@@ -1204,9 +1093,7 @@
                                 isWorking: record.is_working || false,
                                 startTime: record.start_time ? new Date(record.start_time).getTime() : null,
                                 history: record.history || [],
-                                lastUpdated: record.last_updated || new Date().toISOString(),
-                                operatorId: record.operator_id,
-                                operatorName: record.operator_name
+                                lastUpdated: record.last_updated || new Date().toISOString()
                             };
                         });
                         
@@ -1221,7 +1108,6 @@
                         renderEmployeeList();
                         updateTotalHours();
                         updateStats();
-                        loadOperatorRecords();
                         
                         showNotification(`发现 ${updateCount} 条云端更新`, 'success');
                         addSystemLog(`手动检查: 发现 ${updateCount} 条云端更新`);
@@ -1276,11 +1162,6 @@
         const checkUpdatesBtn = document.getElementById('checkUpdates');
         const toggleRealtimeBtn = document.getElementById('toggleRealtime');
         const wechatScansList = document.getElementById('wechatScansList');
-        const operatorRecordsList = document.getElementById('operatorRecordsList');
-        const refreshOperatorRecordsBtn = document.getElementById('refreshOperatorRecords');
-        const statTodayOperators = document.getElementById('statTodayOperators');
-        const statTotalOperations = document.getElementById('statTotalOperations');
-        const operatorStatsList = document.getElementById('operatorStatsList');
         
         // 时间格式化函数
         function formatDateTime(timestamp) {
@@ -1332,39 +1213,6 @@
             return date.toDateString() === today.toDateString();
         }
 
-        // 获取设备信息
-        function getDeviceInfo() {
-            const ua = navigator.userAgent;
-            let deviceType = '未知设备';
-            
-            if (ua.match(/Mobile/)) {
-                deviceType = '手机';
-            } else if (ua.match(/Tablet/)) {
-                deviceType = '平板';
-            } else {
-                deviceType = '电脑';
-            }
-            
-            // 获取屏幕信息
-            const screenInfo = `${screen.width}x${screen.height}`;
-            
-            // 获取浏览器信息
-            let browser = '未知浏览器';
-            if (ua.includes('WeChat')) browser = '微信';
-            else if (ua.includes('Chrome')) browser = 'Chrome';
-            else if (ua.includes('Safari')) browser = 'Safari';
-            else if (ua.includes('Firefox')) browser = 'Firefox';
-            
-            return {
-                device_type: deviceType,
-                screen_resolution: screenInfo,
-                browser: browser,
-                platform: navigator.platform,
-                language: navigator.language,
-                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-            };
-        }
-
         // 初始化
         document.addEventListener('DOMContentLoaded', async function() {
             // 初始化云同步
@@ -1383,7 +1231,6 @@
             updateStats();
             renderSystemLogs();
             loadWechatScans();
-            loadOperatorRecords();
             
             // 生成二维码按钮事件
             generateQRBtn.addEventListener('click', generateQRCode);
@@ -1418,7 +1265,6 @@
                 updateTotalHours();
                 updateStats();
                 loadWechatScans();
-                loadOperatorRecords();
             });
 
             // 检查更新按钮事件
@@ -1436,9 +1282,6 @@
                     }
                 }
             });
-
-            // 操作员记录刷新按钮事件
-            refreshOperatorRecordsBtn.addEventListener('click', loadOperatorRecords);
             
             // 标签页切换事件
             tabs.forEach(tab => {
@@ -1457,10 +1300,9 @@
                         updateStats();
                     }
 
-                    // 如果切换到后台管理，加载微信扫码记录和操作员记录
+                    // 如果切换到后台管理，加载微信扫码记录
                     if (tabId === 'admin-tab') {
                         loadWechatScans();
-                        loadOperatorRecords();
                     }
                 });
             });
@@ -1476,9 +1318,6 @@
             setInterval(async () => {
                 await cloudSync.uploadAllData();
             }, 120000);
-            
-            // 定时刷新操作员记录（每30秒）
-            setInterval(loadOperatorRecords, 30000);
             
             // 添加系统日志
             addSystemLog('系统初始化完成');
@@ -1502,21 +1341,12 @@
                 return;
             }
             
-            // 添加操作员选择功能
-            const operatorId = prompt('请输入操作员ID（工程师ID）:', 'engineer_001');
-            const operatorName = prompt('请输入操作员姓名（工程师姓名）:', '张工程师');
-            
-            if (!operatorId || !operatorName) {
-                showNotification('操作员信息不能为空', 'error');
-                return;
-            }
-            
             // 添加员工到列表
             employees.push({ name, id });
             localStorage.setItem('employees', JSON.stringify(employees));
             
-            // 生成包含操作员信息的二维码URL
-            const successPageUrl = `https://irene329zx-ai.github.io/work/scan-success.html?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}&operator_id=${encodeURIComponent(operatorId)}&operator_name=${encodeURIComponent(operatorName)}`;
+            // 生成微信可扫描的二维码URL
+            const successPageUrl = `https://irene329zx-ai.github.io/work/scan-success.html?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}`;
             
             // 生成二维码
             qrPlaceholder.style.display = 'none';
@@ -1537,7 +1367,7 @@
                     renderEmployeeList();
                     updateEmployeeSelect();
                     updateStats();
-                    addSystemLog(`添加员工: ${name} (${id}) - 生成微信二维码 - 操作员: ${operatorName}`);
+                    addSystemLog(`添加员工: ${name} (${id}) - 生成微信二维码`);
                     
                     // 同步到云端
                     cloudSync.uploadAllData();
@@ -1597,7 +1427,6 @@
                 const statusClass = isWorking ? 'status-working' : 'status-idle';
                 const statusText = isWorking ? '工作中' : '未工作';
                 const startTime = workRecords[employee.id] ? workRecords[employee.id].startTime : null;
-                const operatorName = workRecords[employee.id] ? workRecords[employee.id].operatorName : null;
                 
                 // 计算今日工时和总工时
                 const todayHours = calculateTodayWorkTime(employee.id);
@@ -1611,7 +1440,6 @@
                             <div class="work-time-item"><span class="work-time-label">今日:</span> ${todayHours} 小时</div>
                             <div class="work-time-item"><span class="work-time-label">总计:</span> ${totalHours} 小时</div>
                         </div>
-                        ${operatorName ? `<div class="time-info">操作员: ${operatorName}</div>` : ''}
                         ${startTime ? `<div class="time-info">开始时间: ${formatDateTime(startTime)}</div>` : ''}
                     </div>
                     <div class="employee-actions">
@@ -1762,9 +1590,7 @@
                     todayHours: 0,
                     isWorking: false,
                     startTime: null,
-                    history: [],
-                    operatorId: 'manual_admin',
-                    operatorName: '手动操作员'
+                    history: []
                 };
             }
             
@@ -1778,8 +1604,6 @@
             // 开始计时
             record.isWorking = true;
             record.startTime = Date.now();
-            record.operatorId = 'manual_admin';
-            record.operatorName = '手动操作员';
             
             // 保存到本地存储
             localStorage.setItem('workRecords', JSON.stringify(workRecords));
@@ -1790,7 +1614,7 @@
             
             // 添加工作历史记录
             const employee = employees.find(emp => emp.id === employeeId);
-            addWorkHistory(employeeId, `手动开始工作 - 操作员: 手动操作员 - ${formatDateTime(Date.now())}`);
+            addWorkHistory(employeeId, `手动开始工作 - ${formatDateTime(Date.now())}`);
             
             // 添加系统日志
             addSystemLog(`员工 ${employee.name} 手动开始工作`);
@@ -1800,9 +1624,6 @@
             
             // 同步到云端
             cloudSync.uploadAllData();
-            
-            // 刷新操作员记录
-            loadOperatorRecords();
         }
         
         // 暂停工作
@@ -1839,8 +1660,6 @@
             
             record.isWorking = false;
             record.startTime = null;
-            record.operatorId = 'manual_admin';
-            record.operatorName = '手动操作员';
             
             // 保存到本地存储
             localStorage.setItem('workRecords', JSON.stringify(workRecords));
@@ -1852,7 +1671,7 @@
             
             // 添加工作历史记录
             const employee = employees.find(emp => emp.id === employeeId);
-            addWorkHistory(employeeId, `手动暂停工作 - 操作员: 手动操作员 - 本次工作时长: ${workTimeHours.toFixed(2)}小时`);
+            addWorkHistory(employeeId, `手动暂停工作 - 本次工作时长: ${workTimeHours.toFixed(2)}小时`);
             
             // 添加系统日志
             addSystemLog(`员工 ${employee.name} 手动暂停工作`);
@@ -1862,9 +1681,6 @@
             
             // 同步到云端
             cloudSync.uploadAllData();
-            
-            // 刷新操作员记录
-            loadOperatorRecords();
         }
         
         // 保存工时
@@ -1909,8 +1725,7 @@
             
             workRecords[employeeId].history.push({
                 action,
-                timestamp: new Date().toISOString(),
-                device_info: getDeviceInfo()
+                timestamp: new Date().toISOString()
             });
             
             // 更新工作历史显示
@@ -2077,7 +1892,6 @@
                 scanItem.innerHTML = `
                     <div><strong>${employeeName}</strong> (${scan.employee_id})</div>
                     <div class="wechat-scan-time">${scanTime}</div>
-                    ${scan.operator_name ? `<div>操作员: ${scan.operator_name}</div>` : ''}
                 `;
 
                 wechatScansList.appendChild(scanItem);
@@ -2117,7 +1931,6 @@
                     updateTotalHours();
                     updateStats();
                     loadWechatScans();
-                    loadOperatorRecords();
                     
                     // 记录已处理
                     localStorage.setItem('lastProcessedScanTime', scanTime);
@@ -2131,145 +1944,6 @@
             } catch (error) {
                 console.error('检查微信扫码记录失败:', error);
             }
-        }
-
-        // ==================== 操作员记录功能 ====================
-
-        // 加载操作员记录
-        async function loadOperatorRecords() {
-            try {
-                // 从本地workRecords中获取操作员记录
-                const records = [];
-                
-                for (const [employeeId, record] of Object.entries(workRecords)) {
-                    if (record.lastUpdated && isToday(new Date(record.lastUpdated))) {
-                        const employee = employees.find(emp => emp.id === employeeId);
-                        if (employee) {
-                            records.push({
-                                employee_id: employeeId,
-                                employee_name: employee.name,
-                                operator_id: record.operatorId || 'unknown',
-                                operator_name: record.operatorName || '未知操作员',
-                                is_working: record.isWorking,
-                                last_updated: record.lastUpdated,
-                                history: record.history || []
-                            });
-                        }
-                    }
-                }
-                
-                // 按时间排序
-                records.sort((a, b) => new Date(b.last_updated) - new Date(a.last_updated));
-                
-                renderOperatorRecords(records);
-                updateOperatorStats(records);
-            } catch (error) {
-                console.error('加载操作员记录失败:', error);
-            }
-        }
-
-        // 渲染操作员记录
-        function renderOperatorRecords(records) {
-            const container = document.getElementById('operatorRecordsList');
-            container.innerHTML = '';
-
-            if (records.length === 0) {
-                container.innerHTML = '<div class="empty-state">今日暂无操作员记录</div>';
-                return;
-            }
-
-            records.forEach(record => {
-                const recordItem = document.createElement('div');
-                recordItem.className = 'operator-record-item';
-                
-                const lastHistory = record.history && record.history.length > 0 
-                    ? record.history[record.history.length - 1] 
-                    : null;
-                
-                const actionType = record.is_working ? '上工' : '下工';
-                const actionClass = record.is_working ? 'action-clock-in' : 'action-clock-out';
-                
-                recordItem.innerHTML = `
-                    <div class="operator-record-header">
-                        <div>
-                            <span class="operator-name">${record.operator_name}</span>
-                            <span class="employee-name">→ ${record.employee_name}</span>
-                        </div>
-                        <div class="operator-action ${actionClass}">${actionType}</div>
-                    </div>
-                    <div class="operator-details">
-                        <div>操作员ID: ${record.operator_id}</div>
-                        <div>员工ID: ${record.employee_id}</div>
-                        <div>时间: ${formatDateTime(record.last_updated)}</div>
-                        <div>状态: ${record.is_working ? '工作中' : '已下班'}</div>
-                    </div>
-                    ${lastHistory && lastHistory.device_info ? `
-                        <div class="device-info">
-                            <strong>设备信息:</strong> ${lastHistory.device_info.device_type} | 
-                            ${lastHistory.device_info.browser} | 
-                            ${lastHistory.device_info.screen_resolution}
-                        </div>
-                    ` : ''}
-                `;
-                
-                container.appendChild(recordItem);
-            });
-        }
-
-        // 更新操作员统计
-        function updateOperatorStats(records) {
-            // 统计今日操作员数量
-            const todayOperators = new Set(records.map(record => record.operator_id)).size;
-            document.getElementById('statTodayOperators').textContent = todayOperators;
-            
-            // 统计总操作次数
-            document.getElementById('statTotalOperations').textContent = records.length;
-            
-            // 生成操作员排行
-            generateOperatorRanking(records);
-        }
-
-        // 生成操作员排行
-        function generateOperatorRanking(records) {
-            const operatorStats = {};
-            
-            records.forEach(record => {
-                const operatorId = record.operator_id;
-                if (!operatorStats[operatorId]) {
-                    operatorStats[operatorId] = {
-                        name: record.operator_name,
-                        operations: 0,
-                        employees: new Set()
-                    };
-                }
-                operatorStats[operatorId].operations++;
-                operatorStats[operatorId].employees.add(record.employee_id);
-            });
-            
-            const sortedOperators = Object.values(operatorStats)
-                .sort((a, b) => b.operations - a.operations);
-            
-            const container = document.getElementById('operatorStatsList');
-            container.innerHTML = '';
-            
-            sortedOperators.forEach((operator, index) => {
-                const statItem = document.createElement('div');
-                statItem.className = 'operator-stats-item';
-                
-                statItem.innerHTML = `
-                    <div>
-                        <span class="operator-rank">${index + 1}</span>
-                        ${operator.name}
-                    </div>
-                    <div>
-                        <strong>${operator.operations}</strong> 次操作
-                        <br>
-                        <small>管理 ${operator.employees.size} 名员工</small>
-                    </div>
-                `;
-                
-                container.appendChild(statItem);
-            });
         }
     </script>
 </body>
