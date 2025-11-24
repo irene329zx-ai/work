@@ -52,7 +52,7 @@
     <div class="card">
         <div class="icon">👤</div>
         <h1>扫描者身份确认</h1>
-        <p id="message">正在處理您的身份信息...</p>
+        <p id="message">正在处理您的身份信息...</p>
     </div>
 
     <script>
@@ -62,17 +62,19 @@
             const messageElement = document.getElementById('message');
 
             if (scannerId && /^[A-Za-z0-9]+$/.test(scannerId)) {
-                // **关键步骤：** 将扫描者 ID 存入会话存储
-                sessionStorage.setItem('scanner_id', scannerId);
+                // **核心修改：使用 localStorage 存储，持久化身份**
+                localStorage.setItem('active_scanner_id', scannerId);
                 
                 messageElement.innerHTML = `
                     <div class="instruction">
-                        身份已成功確認為：<span style="color: #e74c3c;">**${scannerId} 工程师**</span>
+                        身份已成功确认并锁定为：<span style="color: #e74c3c;">**${scannerId} 工程师**</span>
                     </div>
-                    <p class="hint">請在**不關閉此頁面**的情況下，用微信**立即掃描**您要考勤的**工人二維碼**。</p>
+                    <p class="hint">请**直接退出此页面**（返回微信主界面），并**再次使用微信“扫一扫”功能**，扫描您要考勤的**工人二維码**。</p>
                 `;
             } else {
-                messageElement.innerHTML = '錯誤：鏈接信息缺失或無效，請重新掃描您的身份碼。';
+                messageElement.innerHTML = '错误：链接信息缺失或无效，请重新扫描您的身份码。';
+                // 清理可能残留的身份信息
+                localStorage.removeItem('active_scanner_id');
             }
         });
     </script>
