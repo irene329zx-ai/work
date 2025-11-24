@@ -629,7 +629,7 @@
             constructor() {
                 // 使用你提供的Supabase配置
                 this.supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
-                this.supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
+                this.supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv/KpC-x97B_1r39lgBTGY';
                 this.supabase = supabase.createClient(this.supabaseUrl, this.supabaseKey);
                 this.isOnline = false;
                 this.isRealtimeEnabled = false;
@@ -1375,7 +1375,7 @@
             addSystemLog('系统初始化完成');
         });
 
-        // **新增：计算月工时并渲染报表**
+        // **优化：计算月工时并渲染报表 (直接读取 duration 字段)**
         async function calculatePayroll() {
             const monthInput = payrollMonthInput.value;
             const resultsContainer = payrollResultsContainer;
@@ -1387,7 +1387,6 @@
             
             // 1. 强制从云端同步最新的工作记录，确保数据完整
             showNotification('正在同步最新工时数据...', 'success');
-            // 注意：这里调用的是 class 内部的同步方法
             await cloudSync.syncWorkRecordsFromCloud();
             
             showNotification('开始计算月工时...', 'success');
@@ -1409,14 +1408,9 @@
                         // 检查历史记录是否属于选定的月份和年份
                         if (timestamp.getFullYear() === year && timestamp.getMonth() + 1 === month) {
                             
-                            // 正则表达式匹配 '工作时长: X.XX小时' 中的数字
-                            // 只有在下工/暂停记录中才有工作时长
-                            const match = item.action.match(/工作时长: (\d+\.?\d*)小时/);
-                            
-                            if (match && match[1]) {
-                                const duration = parseFloat(match[1]);
-                                monthlyHours += duration;
-                            }
+                            // **【优化点】直接读取 duration 字段，如果没有则默认为 0**
+                            const duration = item.duration || 0;
+                            monthlyHours += duration;
                         }
                     });
                 }
@@ -1810,7 +1804,8 @@
             
             // 添加工作历史记录
             const employee = employees.find(emp => emp.id === employeeId);
-            addWorkHistory(employeeId, `手动开始工作 - ${formatDateTime(Date.now())}`);
+            // **【优化点】手动上工时 duration 为 0**
+            addWorkHistory(employeeId, `手动开始工作 - ${formatDateTime(Date.now())}`, 0);
             
             // 添加系统日志
             addSystemLog(`员工 ${employee.name} 手动开始工作`);
@@ -1844,7 +1839,8 @@
             }
             
             // 计算工作时间并暂停
-            const workTimeHours = (Date.now() - record.startTime) / (1000 * 60 * 60);
+            const rawDurationMs = Math.max(100, Date.now() - record.startTime); 
+            const workTimeHours = parseFloat((rawDurationMs / (1000 * 60 * 60)).toFixed(4));
             
             // 更新工时记录
             record.totalHours = parseFloat(record.totalHours || 0) + workTimeHours;
@@ -1867,7 +1863,8 @@
             
             // 添加工作历史记录
             const employee = employees.find(emp => emp.id === employeeId);
-            addWorkHistory(employeeId, `手动暂停工作 - 本次工作时长: ${workTimeHours.toFixed(2)}小时`);
+            // **【优化点】手动下工时添加 duration 字段**
+            addWorkHistory(employeeId, `手动暂停工作 - 本次工作时长: ${workTimeHours.toFixed(2)}小时`, workTimeHours);
             
             // 添加系统日志
             addSystemLog(`员工 ${employee.name} 手动暂停工作`);
@@ -1913,15 +1910,16 @@
             cloudSync.uploadAllData();
         }
         
-        // 添加工作历史记录
-        function addWorkHistory(employeeId, action) {
+        // 添加工作历史记录 (已更新：增加 duration 参数)
+        function addWorkHistory(employeeId, action, duration = 0) {
             if (!workRecords[employeeId].history) {
                 workRecords[employeeId].history = [];
             }
             
             workRecords[employeeId].history.push({
                 action,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                duration: duration // **【优化点】新增 duration 字段**
             });
             
             // 更新工作历史显示
@@ -1937,7 +1935,7 @@
                 return;
             }
             
-            const history = workRecords[employeeId].history.slice(-5); // 只显示最近5条记录
+            const history = workRecords[employeeId].history.slice().reverse().slice(0, 5); // 筛选最近5条记录
             
             history.forEach(item => {
                 const historyItem = document.createElement('div');
