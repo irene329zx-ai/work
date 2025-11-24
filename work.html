@@ -456,22 +456,30 @@
         </header>
         
         <div class="tab-container">
-            <div class="tab active" data-tab="employee-tab">员工录入</div>
+            <div class="tab active" data-tab="employee-tab">人员录入</div>
             <div class="tab" data-tab="admin-tab">后台管理</div>
             <div class="tab" data-tab="data-tab">云端管理</div>
         </div>
         
-        <!-- 员工录入页面 -->
         <div id="employee-tab" class="tab-content active">
             <div class="card">
-                <h2>员工信息录入</h2>
+                <h2>人员信息录入</h2>
+                
                 <div class="form-group">
-                    <label for="employeeName">员工姓名</label>
-                    <input type="text" id="employeeName" placeholder="请输入员工姓名(2-20个字符)">
+                    <label for="employeeRole">人员角色</label>
+                    <select id="employeeRole">
+                        <option value="worker">工人 (生成考勤码)</option>
+                        <option value="engineer">工程师/扫描者 (生成身份码)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="employeeName">姓名</label>
+                    <input type="text" id="employeeName" placeholder="请输入姓名(2-20个字符)">
                 </div>
                 <div class="form-group">
-                    <label for="employeeId">员工工号</label>
-                    <input type="text" id="employeeId" placeholder="请输入员工工号(字母和数字)">
+                    <label for="employeeId">工号</label>
+                    <input type="text" id="employeeId" placeholder="请输入工号(字母和数字)">
                 </div>
                 <div class="action-buttons">
                     <button id="generateQR">生成二维码</button>
@@ -485,7 +493,6 @@
             </div>
         </div>
         
-        <!-- 后台管理页面 -->
         <div id="admin-tab" class="tab-content">
             <div class="main-content">
                 <div class="left-column">
@@ -502,23 +509,19 @@
                             </div>
                         </div>
                         <div class="employee-list" id="employeeList">
-                            <!-- 员工列表将通过JavaScript动态生成 -->
-                        </div>
+                            </div>
                     </div>
                     
                     <div class="card">
                         <h2>今日工时排行</h2>
                         <div class="work-history" id="workRanking">
-                            <!-- 工时排行将通过JavaScript动态生成 -->
-                        </div>
+                            </div>
                     </div>
 
-                    <!-- 微信扫码记录 -->
                     <div class="card">
                         <h2>最近微信扫码记录</h2>
                         <div class="recent-activity" id="wechatScansList">
-                            <!-- 微信扫码记录将通过JavaScript动态生成 -->
-                        </div>
+                            </div>
                     </div>
                 </div>
                 
@@ -526,9 +529,9 @@
                     <div class="card">
                         <h2>工时管理</h2>
                         <div class="form-group">
-                            <label for="selectedEmployee">选择员工</label>
+                            <label for="selectedEmployee">选择工人</label>
                             <select id="selectedEmployee" style="width: 100%; padding: 12px; border-radius: 5px; border: 1px solid #ddd; font-size: 16px;">
-                                <option value="">-- 请选择员工 --</option>
+                                <option value="">-- 请选择工人 --</option>
                             </select>
                         </div>
                         
@@ -543,14 +546,12 @@
                         </div>
                         
                         <div class="work-history" id="workHistory">
-                            <!-- 工作历史记录将通过JavaScript动态生成 -->
-                        </div>
+                            </div>
                     </div>
                 </div>
             </div>
         </div>
         
-        <!-- 云端管理页面 -->
         <div id="data-tab" class="tab-content">
             <div class="main-content">
                 <div class="left-column">
@@ -574,7 +575,7 @@
                         <h2>系统统计</h2>
                         <div class="stats-container">
                             <div class="stat-card">
-                                <div class="stat-label">总员工数</div>
+                                <div class="stat-label">总工人/工程师数</div>
                                 <div class="stat-value" id="statTotalEmployees">0</div>
                             </div>
                             <div class="stat-card">
@@ -586,7 +587,7 @@
                                 <div class="stat-value" id="statTodayHours">0</div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-label">活跃员工</div>
+                                <div class="stat-label">活跃工人</div>
                                 <div class="stat-value" id="statActiveEmployees">0</div>
                             </div>
                         </div>
@@ -595,8 +596,7 @@
                     <div class="card">
                         <h2>操作日志</h2>
                         <div class="logs-container" id="systemLogs">
-                            <!-- 系统日志将通过JavaScript动态生成 -->
-                        </div>
+                            </div>
                     </div>
                 </div>
             </div>
@@ -1125,16 +1125,18 @@
         // 创建全局云同步实例
         const cloudSync = new CloudSync();
 
-        // 全局变量
+        // 全局变量 (已更新，新增 engineers 列表)
         let employees = JSON.parse(localStorage.getItem('employees')) || [];
+        let engineers = JSON.parse(localStorage.getItem('engineers')) || [];
         let workRecords = JSON.parse(localStorage.getItem('workRecords')) || {};
         let systemLogs = JSON.parse(localStorage.getItem('systemLogs')) || [];
         let currentEmployeeId = null;
         let lastWechatScanCheck = 0;
         
-        // DOM元素
+        // DOM元素 (已更新，新增 employeeRoleSelect)
         const employeeNameInput = document.getElementById('employeeName');
         const employeeIdInput = document.getElementById('employeeId');
+        const employeeRoleSelect = document.getElementById('employeeRole');
         const generateQRBtn = document.getElementById('generateQR');
         const clearFormBtn = document.getElementById('clearForm');
         const qrCodeContainer = document.getElementById('qrcode');
@@ -1213,7 +1215,7 @@
             return date.toDateString() === today.toDateString();
         }
 
-        // 初始化
+        // 初始化 (已更新，加载 engineers)
         document.addEventListener('DOMContentLoaded', async function() {
             // 初始化云同步
             await cloudSync.checkConnection();
@@ -1223,6 +1225,7 @@
             
             // 重新加载本地数据（可能已被云端数据更新）
             employees = JSON.parse(localStorage.getItem('employees')) || [];
+            engineers = JSON.parse(localStorage.getItem('engineers')) || []; // <-- 加载工程师数据
             workRecords = JSON.parse(localStorage.getItem('workRecords')) || [];
             
             renderEmployeeList();
@@ -1259,6 +1262,7 @@
                 await cloudSync.syncAllData();
                 // 重新加载数据并更新UI
                 employees = JSON.parse(localStorage.getItem('employees')) || [];
+                engineers = JSON.parse(localStorage.getItem('engineers')) || []; // <-- 重新加载工程师数据
                 workRecords = JSON.parse(localStorage.getItem('workRecords')) || [];
                 renderEmployeeList();
                 updateEmployeeSelect();
@@ -1322,10 +1326,11 @@
             addSystemLog('系统初始化完成');
         });
         
-        // 生成二维码
+        // 生成二维码 (已更新，支持角色区分)
         function generateQRCode() {
             const name = employeeNameInput.value.trim();
             const id = employeeIdInput.value.trim();
+            const role = employeeRoleSelect.value; // <-- 获取选中的角色
             
             // 输入验证
             const validationError = validateEmployeeInput(name, id);
@@ -1334,23 +1339,63 @@
                 return;
             }
             
-            // 检查员工是否已存在
-            if (employees.some(emp => emp.id === id)) {
-                showNotification('该工号已存在', 'error');
+            // --- 角色特定的逻辑和验证 ---
+            
+            let qrDataUrl = '';
+            let successMessage = '';
+            
+            // 检查 ID 是否与另一个角色冲突
+            if (role === 'worker' && engineers.some(eng => eng.id === id)) {
+                showNotification('该工号已存在于工程师列表中，请勿重复使用', 'error');
                 return;
             }
-            
-            // 添加员工到列表
-            employees.push({ name, id });
-            localStorage.setItem('employees', JSON.stringify(employees));
-            
-            // 生成微信可扫描的二维码URL
-            const successPageUrl = `https://irene329zx-ai.github.io/work/scan-success.html?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}`;
+            if (role === 'engineer' && employees.some(emp => emp.id === id)) {
+                showNotification('该工号已存在于工人列表中，请勿重复使用', 'error');
+                return;
+            }
+
+            if (role === 'worker') {
+                // 1. 工人 (Worker) 逻辑：生成考勤码
+                if (employees.some(emp => emp.id === id)) {
+                    showNotification('该工号已存在于工人列表中', 'error');
+                    return;
+                }
+
+                // 添加工人到列表
+                employees.push({ name, id });
+                localStorage.setItem('employees', JSON.stringify(employees));
+
+                // URL 指向 scan-success.html (考勤页面)
+                const path = `https://irene329zx-ai.github.io/work`;
+                qrDataUrl = `${path}/scan-success.html?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}`;
+                successMessage = '工人考勤二维码已生成！';
+                addSystemLog(`添加工人: ${name} (${id}) - 生成考勤码`);
+                
+            } else if (role === 'engineer') {
+                // 2. 工程师 (Engineer/Scanner) 逻辑：生成身份码
+                if (engineers.some(eng => eng.id === id)) {
+                    showNotification('该工号已存在于工程师列表中', 'error');
+                    return;
+                }
+                
+                // 添加工程师到列表
+                engineers.push({ name, id });
+                localStorage.setItem('engineers', JSON.stringify(engineers));
+
+                // URL **关键：** 指向 scanner-session.html (身份确认页面)
+                const path = `https://irene329zx-ai.github.io/work`;
+                qrDataUrl = `${path}/scanner-session.html?id=${encodeURIComponent(id)}`;
+                successMessage = '工程师身份二维码已生成！';
+                addSystemLog(`添加工程师: ${name} (${id}) - 生成身份码`);
+            }
+
+            // --- 共同的 QR Code 生成和通知逻辑 ---
             
             // 生成二维码
+            qrCodeContainer.innerHTML = ''; // 清除旧的二维码
             qrPlaceholder.style.display = 'none';
             
-            QRCode.toCanvas(document.getElementById('qrcode'), successPageUrl, {
+            QRCode.toCanvas(document.getElementById('qrcode'), qrDataUrl, {
                 width: 200,
                 margin: 1,
                 color: {
@@ -1362,14 +1407,16 @@
                     console.error(error);
                     showNotification('生成二维码失败', 'error');
                 } else {
-                    showNotification('微信可扫描的二维码已生成！员工扫码后会自动记录考勤', 'success');
-                    renderEmployeeList();
-                    updateEmployeeSelect();
-                    updateStats();
-                    addSystemLog(`添加员工: ${name} (${id}) - 生成微信二维码`);
+                    showNotification(successMessage, 'success');
                     
-                    // 同步到云端
-                    cloudSync.uploadAllData();
+                    // 仅在新增工人时才需要更新这些 UI/同步
+                    if (role === 'worker') {
+                        renderEmployeeList();
+                        updateEmployeeSelect();
+                        updateStats();
+                        // 同步到云端
+                        cloudSync.uploadAllData();
+                    }
                 }
             });
         }
@@ -1377,7 +1424,7 @@
         // 输入验证
         function validateEmployeeInput(name, id) {
             if (!name || !id) {
-                return '请输入员工姓名和工号';
+                return '请输入姓名和工号';
             }
             
             if (name.length < 2 || name.length > 20) {
@@ -1395,6 +1442,7 @@
         function clearForm() {
             employeeNameInput.value = '';
             employeeIdInput.value = '';
+            employeeRoleSelect.value = 'worker';
             qrCodeContainer.innerHTML = '';
             qrPlaceholder.style.display = 'block';
             showNotification('表单已清空', 'success');
@@ -1412,7 +1460,7 @@
             }
             
             // 更新统计
-            totalEmployeesSpan.textContent = employees.length;
+            totalEmployeesSpan.textContent = employees.length + engineers.length;
             const workingCount = employees.filter(emp => 
                 workRecords[emp.id] && workRecords[emp.id].isWorking
             ).length;
@@ -1772,7 +1820,7 @@
         // 更新统计信息
         function updateStats() {
             // 员工统计
-            statTotalEmployees.textContent = employees.length;
+            statTotalEmployees.textContent = employees.length + engineers.length; // <-- 统计工人+工程师总数
             
             // 工时统计
             let totalHours = 0;
@@ -1887,9 +1935,12 @@
                 const employee = employees.find(emp => emp.id === scan.employee_id);
                 const employeeName = employee ? employee.name : scan.employee_id;
                 const scanTime = new Date(scan.scan_time).toLocaleString('zh-CN');
+                
+                // 新增：显示扫描者信息
+                const scannerInfo = scan.scanner_id ? ` (扫描者: ${scan.scanner_id})` : '';
 
                 scanItem.innerHTML = `
-                    <div><strong>${employeeName}</strong> (${scan.employee_id})</div>
+                    <div><strong>${employeeName}</strong> (${scan.employee_id}) ${scannerInfo}</div>
                     <div class="wechat-scan-time">${scanTime}</div>
                 `;
 
@@ -1899,4 +1950,3 @@
     </script>
 </body>
 </html>
-
