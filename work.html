@@ -873,7 +873,7 @@
                 }
             }
 
-            // 处理微信扫码记录变化
+            // 处理 wechat_scans 变化
             handleWechatScansChange(payload) {
                 if (payload.eventType === 'INSERT' && payload.new) {
                     const scan = payload.new;
@@ -1125,15 +1125,20 @@
         // 创建全局云同步实例
         const cloudSync = new CloudSync();
 
-        // 全局变量 (已更新，新增 engineers 列表)
+        // 全局变量 (已修复 TypeError: engineers.some is not a function)
         let employees = JSON.parse(localStorage.getItem('employees')) || [];
         let engineers = JSON.parse(localStorage.getItem('engineers')) || [];
+        
+        // **修复代码：确保加载的数据是数组**
+        if (!Array.isArray(employees)) employees = [];
+        if (!Array.isArray(engineers)) engineers = [];
+        
         let workRecords = JSON.parse(localStorage.getItem('workRecords')) || {};
         let systemLogs = JSON.parse(localStorage.getItem('systemLogs')) || [];
         let currentEmployeeId = null;
         let lastWechatScanCheck = 0;
         
-        // DOM元素 (已更新，新增 employeeRoleSelect)
+        // DOM元素
         const employeeNameInput = document.getElementById('employeeName');
         const employeeIdInput = document.getElementById('employeeId');
         const employeeRoleSelect = document.getElementById('employeeRole');
@@ -1215,7 +1220,7 @@
             return date.toDateString() === today.toDateString();
         }
 
-        // 初始化 (已更新，加载 engineers)
+        // 初始化
         document.addEventListener('DOMContentLoaded', async function() {
             // 初始化云同步
             await cloudSync.checkConnection();
@@ -1225,7 +1230,9 @@
             
             // 重新加载本地数据（可能已被云端数据更新）
             employees = JSON.parse(localStorage.getItem('employees')) || [];
-            engineers = JSON.parse(localStorage.getItem('engineers')) || []; // <-- 加载工程师数据
+            engineers = JSON.parse(localStorage.getItem('engineers')) || []; 
+            if (!Array.isArray(employees)) employees = []; // 修复后再次检查，防止同步覆盖错误
+            if (!Array.isArray(engineers)) engineers = [];
             workRecords = JSON.parse(localStorage.getItem('workRecords')) || [];
             
             renderEmployeeList();
@@ -1262,7 +1269,9 @@
                 await cloudSync.syncAllData();
                 // 重新加载数据并更新UI
                 employees = JSON.parse(localStorage.getItem('employees')) || [];
-                engineers = JSON.parse(localStorage.getItem('engineers')) || []; // <-- 重新加载工程师数据
+                engineers = JSON.parse(localStorage.getItem('engineers')) || []; 
+                if (!Array.isArray(employees)) employees = []; 
+                if (!Array.isArray(engineers)) engineers = [];
                 workRecords = JSON.parse(localStorage.getItem('workRecords')) || [];
                 renderEmployeeList();
                 updateEmployeeSelect();
@@ -1326,11 +1335,11 @@
             addSystemLog('系统初始化完成');
         });
         
-        // 生成二维码 (已更新，支持角色区分)
+        // 生成二维码
         function generateQRCode() {
             const name = employeeNameInput.value.trim();
             const id = employeeIdInput.value.trim();
-            const role = employeeRoleSelect.value; // <-- 获取选中的角色
+            const role = employeeRoleSelect.value; 
             
             // 输入验证
             const validationError = validateEmployeeInput(name, id);
@@ -1344,7 +1353,7 @@
             let qrDataUrl = '';
             let successMessage = '';
             
-            // 检查 ID 是否与另一个角色冲突
+            // 检查 ID 是否与另一个角色冲突 (这里是报错的源头，已确保 engineers 和 employees 是数组)
             if (role === 'worker' && engineers.some(eng => eng.id === id)) {
                 showNotification('该工号已存在于工程师列表中，请勿重复使用', 'error');
                 return;
@@ -1820,7 +1829,7 @@
         // 更新统计信息
         function updateStats() {
             // 员工统计
-            statTotalEmployees.textContent = employees.length + engineers.length; // <-- 统计工人+工程师总数
+            statTotalEmployees.textContent = employees.length + engineers.length; // 统计工人+工程师总数
             
             // 工时统计
             let totalHours = 0;
@@ -1936,7 +1945,7 @@
                 const employeeName = employee ? employee.name : scan.employee_id;
                 const scanTime = new Date(scan.scan_time).toLocaleString('zh-CN');
                 
-                // 新增：显示扫描者信息
+                // 显示扫描者信息
                 const scannerInfo = scan.scanner_id ? ` (扫描者: ${scan.scanner_id})` : '';
 
                 scanItem.innerHTML = `
