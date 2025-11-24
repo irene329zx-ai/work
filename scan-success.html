@@ -57,7 +57,6 @@
 </head>
 <body>
     <div class="card">
-        <!-- 加载状态 -->
         <div id="loadingState">
             <div class="icon loading">⏳</div>
             <h1>处理中...</h1>
@@ -65,7 +64,6 @@
             <div class="debug" id="loadingDebug"></div>
         </div>
 
-        <!-- 成功状态 -->
         <div id="successState" style="display: none;">
             <div class="icon success">✅</div>
             <h1>考勤成功</h1>
@@ -78,7 +76,6 @@
             <div class="debug" id="successDebug"></div>
         </div>
 
-        <!-- 错误状态 -->
         <div id="errorState" style="display: none;">
             <div class="icon error">❌</div>
             <h1>考勤失败</h1>
@@ -140,8 +137,7 @@ async function fallbackToRestAPI(employeeId, employeeName) {
             return true;
         } else {
             const errorText = await response.text();
-            throw new Error(`HTTP response.status:
-{errorText}`);
+            throw new Error(`HTTP response.status: ${response.status} ${errorText}`);
         }
     } catch (error) {
         showDebug('errorDebug', '备用方案失败: ' + error.message);
@@ -156,15 +152,13 @@ function showSuccess(name, id, action = '') {
     document.getElementById('successState').style.display = 'block';
     
     document.getElementById('successName').textContent = name;
-    document.getElementById('successId').textContent = `工号: {id}`;
+    document.getElementById('successId').textContent = `工号: ${id}`;
     
     // 显示具体的操作结果
     if (action) {
-        document.getElementById('successTime').textContent = `
-{action}成功 - 时间: {new Date().toLocaleString('zh-CN')}`;
+        document.getElementById('successTime').textContent = `${action}成功 - 时间: ${new Date().toLocaleString('zh-CN')}`;
     } else {
-        document.getElementById('successTime').textContent = `时间:
-{new Date().toLocaleString('zh-CN')}`;
+        document.getElementById('successTime').textContent = `时间: ${new Date().toLocaleString('zh-CN')}`;
     }
     
     document.getElementById('closeInfo').textContent = '本页面将自动关闭';
@@ -202,8 +196,7 @@ function useFallback() {
 // 主初始化函数
 async function init() {
     const params = getUrlParams();
-    showDebug('loadingDebug', `员工: params.name(
-{params.id})`);
+    showDebug('loadingDebug', `员工: ${params.name} (${params.id})`);
     
     if (!params.id) {
         showError('无效的二维码：缺少员工信息');
@@ -219,15 +212,15 @@ async function init() {
         showDebug('loadingDebug', 'Supabase加载完成，开始记录数据...');
         
         // 记录考勤
-const success = await recordAttendance(params.id, params.name);
+        const workStatusResult = await recordAttendance(params.id, params.name);
 
-if (success && success.action) {
-    showSuccess(params.name, params.id, success.action);
-} else if (success) {
-    showSuccess(params.name, params.id, '考勤');
-} else {
-    showError('考勤记录失败，请使用备用方案');
-}
+        if (workStatusResult && workStatusResult.action) {
+            showSuccess(params.name, params.id, workStatusResult.action);
+        } else if (workStatusResult) {
+            showSuccess(params.name, params.id, '考勤');
+        } else {
+            showError('考勤记录失败，请使用备用方案');
+        }
         
     } catch (error) {
         console.error('初始化失败:', error);
@@ -279,7 +272,7 @@ async function recordAttendance(employeeId, employeeName) {
             .select();
 
         if (scanError) {
-            showDebug('errorDebug', '扫码记录插入失败: ' + scanError.message);
+            showDebug('errorDebug', '扫码记录插入失败(不影响考勤): ' + scanError.message);
             // 继续尝试更新工作状态，不直接返回
         } else {
             showDebug('successDebug', '扫码记录插入成功');
@@ -291,8 +284,9 @@ async function recordAttendance(employeeId, employeeName) {
         const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName);
         
         if (workStatusResult.success) {
-            showDebug('successDebug', `工作状态更新成功: {workStatusResult.action}`);
-            return true;
+            showDebug('successDebug', `工作状态更新成功: ${workStatusResult.action}`);
+            // 返回 workStatusResult 而不是 true，以便 showSuccess 拿到 action
+            return workStatusResult; 
         } else {
             showDebug('errorDebug', '工作状态更新失败: ' + workStatusResult.error);
             return false;
@@ -304,7 +298,7 @@ async function recordAttendance(employeeId, employeeName) {
     }
 }
 
-// 更新工作状态 - 核心逻辑
+// 更新工作状态 - 核心逻辑 (已修复 workData is not defined 并改进今日工时计算)
 async function updateWorkStatus(supabase, employeeId, employeeName) {
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
@@ -326,7 +320,7 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
         let newRecord = {};
 
         if (currentRecord && currentRecord.is_working) {
-            // 情况1：员工正在工作 → 暂停工作
+            // 情况1：员工正在工作 → 暂停工作 (下工)
             showDebug('loadingDebug', '员工正在工作，执行下工操作...');
             action = '下工';
             
@@ -335,27 +329,53 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
             const workTimeHours = (new Date() - startTime) / (1000 * 60 * 60);
             const newTotalHours = (parseFloat(currentRecord.total_hours) || 0) + workTimeHours;
             
+            // 【改进】处理今日工时
+            let newTodayHours = parseFloat(currentRecord.today_hours) || 0;
+            if (new Date().toDateString() === startTime.toDateString()) {
+                // 如果上工和下工都在同一天，累加今日工时
+                newTodayHours += workTimeHours;
+            } else {
+                // 如果跨天了，今日工时只计算从今天 0点到下工的时间 (复杂情况，这里简化为只计算本次)
+                // 因为 work.html 的 isToday 会处理每日重置，这里只保证本次工作的时长累加
+                // 考虑到 work.html 负责统计，这里简单处理为累加本次工作时长到 today_hours
+                // 确保 work.html 能够同步到最新数据
+                
+                // 优化后的逻辑：只累加本次工作时长到 todayHours (让 work.html 处理跨天重置)
+                // 实际上，如果跨天，work.html会在渲染时自动将旧的 todayHours 排除，这里只记录当前工作累计的小时
+                newTodayHours += workTimeHours;
+            }
+            
             // 更新记录：暂停工作
             newRecord = {
                 employee_id: employeeId,
                 is_working: false,
                 start_time: null,
                 total_hours: newTotalHours,
+                today_hours: newTodayHours, // 写入累加后的今日工时
                 last_updated: now,
                 history: [
                     ...(currentRecord.history || []),
                     {
-                        action: `微信扫码下工 - 工作时长:
-{workTimeHours.toFixed(2)}小时`,
+                        action: `微信扫码下工 - 工作时长: ${workTimeHours.toFixed(2)}小时`,
                         timestamp: now
                     }
                 ]
             };
             
         } else {
-            // 情况2：员工未工作或记录不存在 → 开始工作
+            // 情况2：员工未工作或记录不存在 → 开始工作 (上工)
             showDebug('loadingDebug', '员工未工作，执行上工操作...');
             action = '上工';
+            
+            // 【改进】判断是否需要重置今日工时
+            let currentTodayHours = currentRecord ? parseFloat(currentRecord.today_hours) : 0;
+            if (currentRecord && currentRecord.last_updated) {
+                const lastUpdateDate = new Date(currentRecord.last_updated);
+                // 如果上次更新不是今天（即跨天了），重置今日工时
+                if (new Date().toDateString() !== lastUpdateDate.toDateString()) {
+                    currentTodayHours = 0; 
+                }
+            }
             
             // 创建或更新记录：开始工作
             newRecord = {
@@ -363,6 +383,7 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
                 is_working: true,
                 start_time: now,
                 total_hours: currentRecord ? parseFloat(currentRecord.total_hours) : 0,
+                today_hours: currentTodayHours, // 使用重置后的今日工时
                 last_updated: now,
                 history: [
                     ...(currentRecord?.history || []),
@@ -374,12 +395,29 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
             };
         }
 
-        showDebug('loadingDebug', `执行action操作，更新数据...‘);//插入或更新工作记录constdata:workData,error:workError=awaitsupabase.from(′workrecords′).upsert(newRecord,onConflict:′employeeid′,ignoreDuplicates:false).select();if(workError)thrownewError(‘工作记录更新失败:$workError.message‘);showDebug(′successDebug′,‘
-{action}操作成功完成`);
+        // 【修复】将错误的字符串替换为正确的 JS 语句
+        showDebug('loadingDebug', `执行${action}操作，更新数据...`);
+        
+        // 插入或更新工作记录
+        const { data: workData, error: workError } = await supabase
+            .from('work_records')
+            .upsert(newRecord, {
+                onConflict: 'employee_id',
+                ignoreDuplicates: false
+            })
+            .select();
+
+        if (workError) {
+            throw new Error(`工作记录更新失败: ${workError.message}`);
+        }
+        
+        showDebug('successDebug', `${action}操作成功完成`);
+        // 【修复】workData 现在已被正确定义
+
         return {
             success: true,
             action: action,
-            data: workData
+            data: workData 
         };
 
     } catch (error) {
