@@ -298,20 +298,21 @@ async function recordAttendance(employeeId, employeeName) {
     }
 }
 
-// 更新工作状态 - 核心逻辑 (已修复 workData is not defined 并改进今日工时计算)
+// 更新工作状态 - 核心逻辑 (已修复 workData is not defined、今日工时计算，以及新增员工 .maybeSingle 错误)
 async function updateWorkStatus(supabase, employeeId, employeeName) {
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
         
         // 1. 获取员工当前的工作状态
+        // 【关键修复】使用 .maybeSingle() 来允许 0 行记录（新员工）返回 null
         const { data: currentRecord, error: fetchError } = await supabase
             .from('work_records')
             .select('*')
             .eq('employee_id', employeeId)
-            .single();
+            .maybeSingle();
 
-        // 如果记录不存在，不算错误，我们创建新记录
-        if (fetchError && !fetchError.message.includes('不存在')) {
+        // 如果存在其他类型的错误（非 0 行或 1 行的错误），则抛出
+        if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 是 Supabase 116 错误码，表示 no row returned
             throw fetchError;
         }
 
@@ -319,6 +320,7 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
         let action = '';
         let newRecord = {};
 
+        // currentRecord 为 null 表示新员工或记录不存在
         if (currentRecord && currentRecord.is_working) {
             // 情况1：员工正在工作 → 暂停工作 (下工)
             showDebug('loadingDebug', '员工正在工作，执行下工操作...');
@@ -329,19 +331,13 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
             const workTimeHours = (new Date() - startTime) / (1000 * 60 * 60);
             const newTotalHours = (parseFloat(currentRecord.total_hours) || 0) + workTimeHours;
             
-            // 【改进】处理今日工时
+            // 处理今日工时
             let newTodayHours = parseFloat(currentRecord.today_hours) || 0;
             if (new Date().toDateString() === startTime.toDateString()) {
                 // 如果上工和下工都在同一天，累加今日工时
                 newTodayHours += workTimeHours;
             } else {
-                // 如果跨天了，今日工时只计算从今天 0点到下工的时间 (复杂情况，这里简化为只计算本次)
-                // 因为 work.html 的 isToday 会处理每日重置，这里只保证本次工作的时长累加
-                // 考虑到 work.html 负责统计，这里简单处理为累加本次工作时长到 today_hours
-                // 确保 work.html 能够同步到最新数据
-                
-                // 优化后的逻辑：只累加本次工作时长到 todayHours (让 work.html 处理跨天重置)
-                // 实际上，如果跨天，work.html会在渲染时自动将旧的 todayHours 排除，这里只记录当前工作累计的小时
+                // 简化处理：让 work.html 处理每日重置，这里只保证本次工作的时长被累加
                 newTodayHours += workTimeHours;
             }
             
@@ -363,11 +359,11 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
             };
             
         } else {
-            // 情况2：员工未工作或记录不存在 → 开始工作 (上工)
-            showDebug('loadingDebug', '员工未工作，执行上工操作...');
+            // 情况2：员工未工作或记录不存在（含新员工） → 开始工作 (上工)
+            showDebug('loadingDebug', '员工未工作/新员工，执行上工操作...');
             action = '上工';
             
-            // 【改进】判断是否需要重置今日工时
+            // 判断是否需要重置今日工时
             let currentTodayHours = currentRecord ? parseFloat(currentRecord.today_hours) : 0;
             if (currentRecord && currentRecord.last_updated) {
                 const lastUpdateDate = new Date(currentRecord.last_updated);
@@ -395,7 +391,6 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
             };
         }
 
-        // 【修复】将错误的字符串替换为正确的 JS 语句
         showDebug('loadingDebug', `执行${action}操作，更新数据...`);
         
         // 插入或更新工作记录
@@ -412,7 +407,6 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
         }
         
         showDebug('successDebug', `${action}操作成功完成`);
-        // 【修复】workData 现在已被正确定义
 
         return {
             success: true,
