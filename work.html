@@ -1125,11 +1125,11 @@
         // 创建全局云同步实例
         const cloudSync = new CloudSync();
 
-        // 全局变量 (已修复 TypeError: engineers.some is not a function)
+        // 全局变量 (已修复 TypeError)
         let employees = JSON.parse(localStorage.getItem('employees')) || [];
         let engineers = JSON.parse(localStorage.getItem('engineers')) || [];
         
-        // **修复代码：确保加载的数据是数组**
+        // 修复代码：确保加载的数据是数组
         if (!Array.isArray(employees)) employees = [];
         if (!Array.isArray(engineers)) engineers = [];
         
@@ -1170,6 +1170,18 @@
         const toggleRealtimeBtn = document.getElementById('toggleRealtime');
         const wechatScansList = document.getElementById('wechatScansList');
         
+        // **新增：根据 ID 获取人员姓名 (工人或工程师)**
+        function getPersonnelName(id) {
+            if (!id) return 'N/A';
+            // 1. 搜索工人列表
+            const worker = employees.find(emp => emp.id === id);
+            if (worker) return worker.name;
+            // 2. 搜索工程师列表
+            const engineer = engineers.find(eng => eng.id === id);
+            if (engineer) return engineer.name;
+            return id; // 找不到姓名就返回工号
+        }
+
         // 时间格式化函数
         function formatDateTime(timestamp) {
             if (!timestamp) return '未开始';
@@ -1231,7 +1243,7 @@
             // 重新加载本地数据（可能已被云端数据更新）
             employees = JSON.parse(localStorage.getItem('employees')) || [];
             engineers = JSON.parse(localStorage.getItem('engineers')) || []; 
-            if (!Array.isArray(employees)) employees = []; // 修复后再次检查，防止同步覆盖错误
+            if (!Array.isArray(employees)) employees = []; 
             if (!Array.isArray(engineers)) engineers = [];
             workRecords = JSON.parse(localStorage.getItem('workRecords')) || [];
             
@@ -1353,7 +1365,7 @@
             let qrDataUrl = '';
             let successMessage = '';
             
-            // 检查 ID 是否与另一个角色冲突 (这里是报错的源头，已确保 engineers 和 employees 是数组)
+            // 检查 ID 是否与另一个角色冲突 
             if (role === 'worker' && engineers.some(eng => eng.id === id)) {
                 showNotification('该工号已存在于工程师列表中，请勿重复使用', 'error');
                 return;
@@ -1911,16 +1923,21 @@
         // 加载微信扫码记录
         async function loadWechatScans() {
             try {
+                // 因为我们只想显示最近的记录，仍然限制数量
                 const { data: scans, error } = await cloudSync.supabase
                     .from('wechat_scans')
                     .select('*')
                     .order('scan_time', { ascending: false })
-                    .limit(5); // 只显示最近5条记录
+                    .limit(5); 
 
                 if (error) {
                     console.error('加载微信扫码记录失败:', error);
                     return;
                 }
+                
+                // 由于同步不是实时的，先强制从云端同步一次人员列表，确保能找到最新的工程师信息
+                // 注意：这里同步的是 employees 表，如果您创建了 engineer 表，则需要修改同步逻辑
+                // 目前工程师信息仅存在本地 localStorage，所以依赖初始化时的加载。
 
                 renderWechatScans(scans || []);
             } catch (error) {
@@ -1928,7 +1945,7 @@
             }
         }
 
-        // 渲染微信扫码记录
+        // 渲染微信扫码记录 (已更新：显示工程师姓名)
         function renderWechatScans(scans) {
             wechatScansList.innerHTML = '';
 
@@ -1941,15 +1958,16 @@
                 const scanItem = document.createElement('div');
                 scanItem.className = 'wechat-scan-item';
                 
-                const employee = employees.find(emp => emp.id === scan.employee_id);
-                const employeeName = employee ? employee.name : scan.employee_id;
+                // 使用新函数获取工人和工程师的姓名
+                const workerName = getPersonnelName(scan.employee_id); 
+                const scannerName = getPersonnelName(scan.scanner_id); 
                 const scanTime = new Date(scan.scan_time).toLocaleString('zh-CN');
                 
                 // 显示扫描者信息
-                const scannerInfo = scan.scanner_id ? ` (扫描者: ${scan.scanner_id})` : '';
+                const scannerInfo = scan.scanner_id ? ` (扫描者: ${scannerName})` : '';
 
                 scanItem.innerHTML = `
-                    <div><strong>${employeeName}</strong> (${scan.employee_id}) ${scannerInfo}</div>
+                    <div><strong>${workerName}</strong> (${scan.employee_id}) ${scannerInfo}</div>
                     <div class="wechat-scan-time">${scanTime}</div>
                 `;
 
