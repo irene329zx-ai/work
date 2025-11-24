@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>扫描者身份确认</title>
+    <style>
+        body { 
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; 
+            text-align: center; 
+            padding: 50px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card { 
+            background: white; 
+            padding: 40px; 
+            border-radius: 15px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2); 
+            max-width: 450px; 
+            width: 100%;
+        }
+        h1 { 
+            color: #3498db; 
+            margin-bottom: 15px;
+        }
+        .icon {
+            font-size: 60px;
+            color: #2ecc71;
+            margin-bottom: 20px;
+        }
+        .instruction { 
+            color: #2c3e50; 
+            font-size: 1.2rem; 
+            font-weight: bold; 
+            margin-top: 20px;
+            padding: 15px;
+            border: 2px dashed #3498db;
+            border-radius: 8px;
+        }
+        .hint {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">👤</div>
+        <h1>扫描者身份确认</h1>
+        <p id="message">正在處理您的身份信息...</p>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const params = new URLSearchParams(window.location.search);
+            const scannerId = params.get('id'); // 获取工程师的工号 (D 或 E)
+            const messageElement = document.getElementById('message');
+
+            if (scannerId && /^[A-Za-z0-9]+$/.test(scannerId)) {
+                // **关键步骤：** 将扫描者 ID 存入会话存储
+                sessionStorage.setItem('scanner_id', scannerId);
+                
+                messageElement.innerHTML = `
+                    <div class="instruction">
+                        身份已成功確認為：<span style="color: #e74c3c;">**${scannerId} 工程师**</span>
+                    </div>
+                    <p class="hint">請在**不關閉此頁面**的情況下，用微信**立即掃描**您要考勤的**工人二維碼**。</p>
+                `;
+            } else {
+                messageElement.innerHTML = '錯誤：鏈接信息缺失或無效，請重新掃描您的身份碼。';
+            }
+        });
+    </script>
+</body>
+</html>
