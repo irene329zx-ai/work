@@ -298,13 +298,13 @@ async function recordAttendance(employeeId, employeeName) {
     }
 }
 
-// 更新工作状态 - 核心逻辑 (已修复 workData is not defined、今日工时计算，以及新增员工 .maybeSingle 错误)
+// 更新工作状态 - 核心逻辑 
 async function updateWorkStatus(supabase, employeeId, employeeName) {
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
         
         // 1. 获取员工当前的工作状态
-        // 【关键修复】使用 .maybeSingle() 来允许 0 行记录（新员工）返回 null
+        // 使用 .maybeSingle() 来允许 0 行记录（新员工）返回 null
         const { data: currentRecord, error: fetchError } = await supabase
             .from('work_records')
             .select('*')
@@ -312,7 +312,7 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
             .maybeSingle();
 
         // 如果存在其他类型的错误（非 0 行或 1 行的错误），则抛出
-        if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 是 Supabase 116 错误码，表示 no row returned
+        if (fetchError && fetchError.code !== 'PGRST116') {
             throw fetchError;
         }
 
@@ -326,19 +326,24 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
             showDebug('loadingDebug', '员工正在工作，执行下工操作...');
             action = '下工';
             
-            // 计算本次工作时长
-            const startTime = new Date(currentRecord.start_time);
-            const workTimeHours = (new Date() - startTime) / (1000 * 60 * 60);
-            const newTotalHours = (parseFloat(currentRecord.total_hours) || 0) + workTimeHours;
+            // 【解决精度问题】计算本次工作时长
+            const startTime = new Date(currentRecord.start_time).getTime(); // 获取毫秒时间戳
+            // 确保本次工作时长至少为 100 毫秒，防止网络延迟导致负值或 0
+            const rawDurationMs = Math.max(100, new Date().getTime() - startTime); 
+            const workTimeHours = rawDurationMs / (1000 * 60 * 60);
+
+            // 统一精度到小数点后四位
+            const fixedWorkTimeHours = parseFloat(workTimeHours.toFixed(4)); 
+            const newTotalHours = (parseFloat(currentRecord.total_hours) || 0) + fixedWorkTimeHours;
             
             // 处理今日工时
             let newTodayHours = parseFloat(currentRecord.today_hours) || 0;
-            if (new Date().toDateString() === startTime.toDateString()) {
+            if (new Date().toDateString() === new Date(currentRecord.start_time).toDateString()) {
                 // 如果上工和下工都在同一天，累加今日工时
-                newTodayHours += workTimeHours;
+                newTodayHours += fixedWorkTimeHours;
             } else {
-                // 简化处理：让 work.html 处理每日重置，这里只保证本次工作的时长被累加
-                newTodayHours += workTimeHours;
+                // 如果跨天，仍然累加本次工作时长，让 work.html 处理每日重置和实时计算
+                newTodayHours += fixedWorkTimeHours;
             }
             
             // 更新记录：暂停工作
@@ -352,7 +357,8 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
                 history: [
                     ...(currentRecord.history || []),
                     {
-                        action: `微信扫码下工 - 工作时长: ${workTimeHours.toFixed(2)}小时`,
+                        // 记录时，显示两位小数即可
+                        action: `微信扫码下工 - 工作时长: ${fixedWorkTimeHours.toFixed(2)}小时`, 
                         timestamp: now
                     }
                 ]
