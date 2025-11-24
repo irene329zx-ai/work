@@ -94,8 +94,7 @@ function getUrlParams() {
     const params = new URLSearchParams(window.location.search);
     return {
         id: params.get('id'),
-        name: params.get('name') || '员工',
-        scannerId: params.get('scanner_id') || 'UNKNOWN'
+        name: params.get('name') || '员工'
     };
 }
 
@@ -282,10 +281,10 @@ async function recordAttendance(employeeId, employeeName) {
         showDebug('loadingDebug', '2. 更新工作状态...');
         
         // 2. 更新工作状态（这是关键！）
-        const params = getUrlParams();
         const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName);
+        
         if (workStatusResult.success) {
-            showDebug('successDebug', `工作状态更新成功: ${workStatusResult.action}. 扫描者: ${params.scannerId}`);
+            showDebug('successDebug', `工作状态更新成功: ${workStatusResult.action}`);
             // 返回 workStatusResult 而不是 true，以便 showSuccess 拿到 action
             return workStatusResult; 
         } else {
@@ -300,7 +299,7 @@ async function recordAttendance(employeeId, employeeName) {
 }
 
 // 更新工作状态 - 核心逻辑 
-async function updateWorkStatus(supabase, employeeId, employeeName, scannerId) {
+async function updateWorkStatus(supabase, employeeId, employeeName) {
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
         
@@ -355,7 +354,6 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId) {
                 total_hours: newTotalHours,
                 today_hours: newTodayHours, // 写入累加后的今日工时
                 last_updated: now,
-                scanned_by_id: scannerId,
                 history: [
                     ...(currentRecord.history || []),
                     {
@@ -389,7 +387,6 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId) {
                 total_hours: currentRecord ? parseFloat(currentRecord.total_hours) : 0,
                 today_hours: currentTodayHours, // 使用重置后的今日工时
                 last_updated: now,
-                scanned_by_id: scannerId,
                 history: [
                     ...(currentRecord?.history || []),
                     {
@@ -440,4 +437,3 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 </body>
 </html>
-
