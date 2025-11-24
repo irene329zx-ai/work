@@ -98,12 +98,15 @@ function getUrlParams() {
     };
 }
 
-// **新增函数：获取并清除会话存储中的扫描者ID**
-function getScannerIdFromSession() {
-    const sessionScannerId = sessionStorage.getItem('scanner_id');
-    // 重要：清除会话存储，防止下次工人直接扫码时被误用
-    sessionStorage.removeItem('scanner_id'); 
-    return sessionScannerId;
+// **关键修改：使用 localStorage 读取并清除扫描者ID**
+function getScannerIdFromLocal() {
+    const scannerId = localStorage.getItem('active_scanner_id');
+    
+    // **重要：** 无论是否读取到，都尝试清除，防止身份信息长期保留
+    if (scannerId) { 
+        localStorage.removeItem('active_scanner_id'); 
+    }
+    return scannerId;
 }
 
 // 显示调试信息
@@ -120,8 +123,8 @@ function showDebug(elementId, message) {
 async function fallbackToRestAPI(employeeId, employeeName) {
     showDebug('errorDebug', '尝试备用方案...');
     
-    // 获取扫描者 ID
-    const scannerId = getScannerIdFromSession(); 
+    // 从 localStorage 获取扫描者 ID
+    const scannerId = getScannerIdFromLocal(); 
     showDebug('errorDebug', `扫描者ID: ${scannerId || '未识别'}`);
     
     const scanData = {
@@ -266,11 +269,11 @@ function loadSupabase() {
     });
 }
 
-// 记录考勤 - 完整版本 (已更新)
+// 记录考勤 - 完整版本 (已更新，使用 getScannerIdFromLocal)
 async function recordAttendance(employeeId, employeeName) {
     try {
-        // **关键：** 获取扫描者 ID
-        const scannerId = getScannerIdFromSession(); 
+        // **关键：** 从 localStorage 获取扫描者 ID
+        const scannerId = getScannerIdFromLocal(); 
         showDebug('loadingDebug', `扫描者 ID: ${scannerId || '未识别'}`);
         
         showDebug('loadingDebug', '初始化Supabase客户端...');
@@ -309,7 +312,7 @@ async function recordAttendance(employeeId, employeeName) {
         showDebug('loadingDebug', '2. 更新工作状态...');
         
         // 2. 更新工作状态（这是关键！）
-        // **关键：** 将 scannerId 传递给 updateWorkStatus
+        // 将 scannerId 传递给 updateWorkStatus
         const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName, scannerId); 
         
         if (workStatusResult.success) {
@@ -328,7 +331,6 @@ async function recordAttendance(employeeId, employeeName) {
 }
 
 // 更新工作状态 - 核心逻辑 (已更新)
-// **关键：** 接收 scannerId
 async function updateWorkStatus(supabase, employeeId, employeeName, scannerId) { 
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
@@ -350,7 +352,7 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId) {
         let action = '';
         let newRecord = {};
         
-        // **新增：** 用于添加到历史记录的文本信息
+        // 用于添加到历史记录的文本信息
         const scannerInfo = scannerId ? ` (由 ${scannerId} 扫描)` : '';
 
         // currentRecord 为 null 表示新员工或记录不存在
@@ -371,7 +373,7 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId) {
             
             // 处理今日工时
             let newTodayHours = parseFloat(currentRecord.today_hours) || 0;
-            if (new Date().toDateString() === new Date(currentRecord.start_time).toDateString()) {
+            if (currentRecord.start_time && new Date().toDateString() === new Date(currentRecord.start_time).toDateString()) {
                 // 如果上工和下工都在同一天，累加今日工时
                 newTodayHours += fixedWorkTimeHours;
             } else {
