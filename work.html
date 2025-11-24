@@ -1311,7 +1311,6 @@
             setInterval(() => {
                 renderEmployeeList();
                 updateTotalHours();
-                checkWechatScansAndUpdate();
             }, 2000);
             
             // 定时同步到云端（每2分钟）
@@ -1897,54 +1896,7 @@
                 wechatScansList.appendChild(scanItem);
             });
         }
-
-        // 检查微信扫码并更新状态
-        async function checkWechatScansAndUpdate() {
-            // 每10秒检查一次，避免频繁请求
-            const now = Date.now();
-            if (now - lastWechatScanCheck < 10000) return;
-            lastWechatScanCheck = now;
-
-            try {
-                const { data: recentScans, error } = await cloudSync.supabase
-                    .from('wechat_scans')
-                    .select('*')
-                    .order('scan_time', { ascending: false })
-                    .limit(1);
-
-                if (error || !recentScans || recentScans.length === 0) return;
-
-                const latestScan = recentScans[0];
-                const scanTime = new Date(latestScan.scan_time).getTime();
-                
-                // 检查这个扫码记录是否已经处理过（避免重复处理）
-                const lastProcessedScanTime = localStorage.getItem('lastProcessedScanTime') || 0;
-                
-                if (scanTime > lastProcessedScanTime) {
-                    console.log('检测到新的微信扫码，更新工作状态:', latestScan.employee_id);
-                    
-                    // 从云端重新同步工作记录，确保数据最新
-                    await cloudSync.syncWorkRecordsFromCloud();
-                    
-                    // 更新界面
-                    renderEmployeeList();
-                    updateTotalHours();
-                    updateStats();
-                    loadWechatScans();
-                    
-                    // 记录已处理
-                    localStorage.setItem('lastProcessedScanTime', scanTime);
-                    
-                    // 显示通知
-                    const employee = employees.find(emp => emp.id === latestScan.employee_id);
-                    if (employee) {
-                        showNotification(`员工 ${employee.name} 微信扫码考勤已更新`, 'success');
-                    }
-                }
-            } catch (error) {
-                console.error('检查微信扫码记录失败:', error);
-            }
-        }
     </script>
 </body>
 </html>
+
