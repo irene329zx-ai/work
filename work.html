@@ -118,7 +118,7 @@
             color: #2c3e50;
         }
         
-        input[type="text"], select {
+        input[type="text"], select, input[type="month"] {
             width: 100%;
             padding: 12px;
             border: 1px solid #ddd;
@@ -127,7 +127,7 @@
             transition: border 0.3s;
         }
         
-        input[type="text"]:focus, select:focus {
+        input[type="text"]:focus, select:focus, input[type="month"]:focus {
             border-color: #3498db;
             outline: none;
         }
@@ -548,6 +548,24 @@
                         <div class="work-history" id="workHistory">
                             </div>
                     </div>
+
+                    <div class="card">
+                        <h2>工资统计与报表</h2>
+                        <div class="form-group">
+                            <label for="payrollMonth">选择月份</label>
+                            <input type="month" id="payrollMonth" style="width: 100%; padding: 12px; border-radius: 5px; border: 1px solid #ddd; font-size: 16px;">
+                        </div>
+                        <div class="action-buttons">
+                            <button id="calculatePayroll" class="secondary">计算月工时</button>
+                        </div>
+                        
+                        <div style="margin-top: 20px;">
+                            <h3 style="margin-bottom: 10px; color: #3498db;">计算结果</h3>
+                            <div id="payrollResults">
+                                <div class="empty-state">请选择月份并点击计算</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -948,7 +966,7 @@
                         });
                         
                         workRecords = newWorkRecords;
-                        localStorage.setItem('workRecords', JSON.stringify(workRecords));
+                        localStorage.setItem('workRecords', JSON.stringify(newWorkRecords)); // 修复：存储 newWorkRecords
                         return true;
                     }
                 } catch (error) {
@@ -1170,6 +1188,11 @@
         const toggleRealtimeBtn = document.getElementById('toggleRealtime');
         const wechatScansList = document.getElementById('wechatScansList');
         
+        // **新增工资统计 DOM 元素**
+        const payrollMonthInput = document.getElementById('payrollMonth');
+        const calculatePayrollBtn = document.getElementById('calculatePayroll');
+        const payrollResultsContainer = document.getElementById('payrollResults');
+
         // **新增：根据 ID 获取人员姓名 (工人或工程师)**
         function getPersonnelName(id) {
             if (!id) return 'N/A';
@@ -1265,6 +1288,11 @@
             pauseWorkBtn.addEventListener('click', pauseWork);
             saveWorkBtn.addEventListener('click', saveWork);
             
+            // **新增：工资计算按钮事件**
+            if (calculatePayrollBtn) {
+                calculatePayrollBtn.addEventListener('click', calculatePayroll);
+            }
+
             // 员工选择变化事件
             selectedEmployeeSelect.addEventListener('change', function() {
                 currentEmployeeId = this.value;
@@ -1346,6 +1374,106 @@
             // 添加系统日志
             addSystemLog('系统初始化完成');
         });
+
+        // **新增：计算月工时并渲染报表**
+        async function calculatePayroll() {
+            const monthInput = payrollMonthInput.value;
+            const resultsContainer = payrollResultsContainer;
+
+            if (!monthInput) {
+                showNotification('请选择要计算的月份', 'error');
+                return;
+            }
+            
+            // 1. 强制从云端同步最新的工作记录，确保数据完整
+            showNotification('正在同步最新工时数据...', 'success');
+            // 注意：这里调用的是 class 内部的同步方法
+            await cloudSync.syncWorkRecordsFromCloud();
+            
+            showNotification('开始计算月工时...', 'success');
+
+            const [year, month] = monthInput.split('-').map(Number);
+            
+            // 初始化工资统计对象
+            const payrollTotals = {};
+            
+            for (const employeeId in workRecords) {
+                const record = workRecords[employeeId];
+                let monthlyHours = 0;
+                
+                // 确保 history 字段存在且是数组
+                if (Array.isArray(record.history)) {
+                    record.history.forEach(item => {
+                        const timestamp = new Date(item.timestamp);
+                        
+                        // 检查历史记录是否属于选定的月份和年份
+                        if (timestamp.getFullYear() === year && timestamp.getMonth() + 1 === month) {
+                            
+                            // 正则表达式匹配 '工作时长: X.XX小时' 中的数字
+                            // 只有在下工/暂停记录中才有工作时长
+                            const match = item.action.match(/工作时长: (\d+\.?\d*)小时/);
+                            
+                            if (match && match[1]) {
+                                const duration = parseFloat(match[1]);
+                                monthlyHours += duration;
+                            }
+                        }
+                    });
+                }
+                
+                if (monthlyHours > 0) {
+                    payrollTotals[employeeId] = monthlyHours;
+                }
+            }
+            
+            renderPayrollTable(payrollTotals, monthInput);
+            showNotification('月工时计算完成', 'success');
+        }
+
+        // **新增：渲染工资统计表格**
+        function renderPayrollTable(payrollTotals, monthInput) {
+            const resultsContainer = payrollResultsContainer;
+            const monthName = monthInput.replace('-', '年') + '月';
+            
+            const employeeIds = Object.keys(payrollTotals).sort((a, b) => payrollTotals[b] - payrollTotals[a]);
+
+            if (employeeIds.length === 0) {
+                resultsContainer.innerHTML = `<div class="empty-state">在 ${monthName} 没有找到工时记录。</div>`;
+                return;
+            }
+            
+            let tableHTML = `
+                <h4 style="margin-bottom: 15px;">${monthName} 工时统计表</h4>
+                <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead>
+                        <tr style="background: #f0f0f0;">
+                            <th style="padding: 10px; border: 1px solid #ddd;">姓名/工号</th>
+                            <th style="padding: 10px; border: 1px solid #ddd; width: 150px; text-align: right;">总工时 (小时)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            employeeIds.forEach(employeeId => {
+                const name = getPersonnelName(employeeId);
+                const hours = payrollTotals[employeeId].toFixed(2);
+                
+                tableHTML += `
+                    <tr>
+                        <td style="padding: 10px; border: 1px solid #ddd;">${name} (${employeeId})</td>
+                        <td style="padding: 10px; border: 1px solid #ddd; text-align: right; font-weight: bold; color: #3498db;">${hours}</td>
+                    </tr>
+                `;
+            });
+            
+            tableHTML += `
+                    </tbody>
+                </table>
+            `;
+
+            resultsContainer.innerHTML = tableHTML;
+        }
+
         
         // 生成二维码
         function generateQRCode() {
@@ -1632,7 +1760,7 @@
         
         // 更新员工选择下拉框
         function updateEmployeeSelect() {
-            selectedEmployeeSelect.innerHTML = '<option value="">-- 请选择员工 --</option>';
+            selectedEmployeeSelect.innerHTML = '<option value="">-- 请选择工人 --</option>';
             
             employees.forEach(employee => {
                 const option = document.createElement('option');
@@ -1935,10 +2063,6 @@
                     return;
                 }
                 
-                // 由于同步不是实时的，先强制从云端同步一次人员列表，确保能找到最新的工程师信息
-                // 注意：这里同步的是 employees 表，如果您创建了 engineer 表，则需要修改同步逻辑
-                // 目前工程师信息仅存在本地 localStorage，所以依赖初始化时的加载。
-
                 renderWechatScans(scans || []);
             } catch (error) {
                 console.error('加载微信扫码记录异常:', error);
