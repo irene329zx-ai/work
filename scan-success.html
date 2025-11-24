@@ -10,7 +10,7 @@
             margin: 0;
             padding: 20px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            min-height: 10vh;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -98,6 +98,14 @@ function getUrlParams() {
     };
 }
 
+// **新增函数：获取并清除会话存储中的扫描者ID**
+function getScannerIdFromSession() {
+    const sessionScannerId = sessionStorage.getItem('scanner_id');
+    // 重要：清除会话存储，防止下次工人直接扫码时被误用
+    sessionStorage.removeItem('scanner_id'); 
+    return sessionScannerId;
+}
+
 // 显示调试信息
 function showDebug(elementId, message) {
     console.log('DEBUG:', message);
@@ -108,15 +116,24 @@ function showDebug(elementId, message) {
     }
 }
 
-// 备用方案：使用Fetch API直接调用Supabase REST API
+// 备用方案：使用Fetch API直接调用Supabase REST API (已更新)
 async function fallbackToRestAPI(employeeId, employeeName) {
     showDebug('errorDebug', '尝试备用方案...');
+    
+    // 获取扫描者 ID
+    const scannerId = getScannerIdFromSession(); 
+    showDebug('errorDebug', `扫描者ID: ${scannerId || '未识别'}`);
     
     const scanData = {
         employee_id: employeeId,
         user_agent: navigator.userAgent,
         scan_time: new Date().toISOString()
     };
+    
+    // 如果存在 scannerId，则加入到数据中
+    if (scannerId) {
+        scanData.scanner_id = scannerId;
+    }
 
     try {
         // 使用Supabase REST API直接插入数据
@@ -128,7 +145,7 @@ async function fallbackToRestAPI(employeeId, employeeName) {
                 'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY',
                 'Prefer': 'return=minimal'
             },
-            body: JSON.stringify(scanData)
+            body: JSON.stringify(scanData) // 使用包含 scanner_id 的 scanData
         });
 
         if (response.ok) {
@@ -249,9 +266,13 @@ function loadSupabase() {
     });
 }
 
-// 记录考勤 - 完整版本
+// 记录考勤 - 完整版本 (已更新)
 async function recordAttendance(employeeId, employeeName) {
     try {
+        // **关键：** 获取扫描者 ID
+        const scannerId = getScannerIdFromSession(); 
+        showDebug('loadingDebug', `扫描者 ID: ${scannerId || '未识别'}`);
+        
         showDebug('loadingDebug', '初始化Supabase客户端...');
         
         // 初始化Supabase
@@ -261,14 +282,21 @@ async function recordAttendance(employeeId, employeeName) {
         
         showDebug('loadingDebug', '1. 插入扫码记录...');
         
+        // 构建记录对象
+        const scanRecord = { 
+            employee_id: employeeId,
+            user_agent: navigator.userAgent,
+            scan_time: new Date().toISOString()
+        };
+        
+        if (scannerId) { // 如果存在 scannerId，则加入
+            scanRecord.scanner_id = scannerId;
+        }
+        
         // 1. 插入扫码记录
         const { data: scanData, error: scanError } = await supabase
             .from('wechat_scans')
-            .insert([{
-                employee_id: employeeId,
-                user_agent: navigator.userAgent,
-                scan_time: new Date().toISOString()
-            }])
+            .insert([scanRecord]) // 使用包含 scanner_id 的记录对象
             .select();
 
         if (scanError) {
@@ -281,7 +309,8 @@ async function recordAttendance(employeeId, employeeName) {
         showDebug('loadingDebug', '2. 更新工作状态...');
         
         // 2. 更新工作状态（这是关键！）
-        const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName);
+        // **关键：** 将 scannerId 传递给 updateWorkStatus
+        const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName, scannerId); 
         
         if (workStatusResult.success) {
             showDebug('successDebug', `工作状态更新成功: ${workStatusResult.action}`);
@@ -298,8 +327,9 @@ async function recordAttendance(employeeId, employeeName) {
     }
 }
 
-// 更新工作状态 - 核心逻辑 
-async function updateWorkStatus(supabase, employeeId, employeeName) {
+// 更新工作状态 - 核心逻辑 (已更新)
+// **关键：** 接收 scannerId
+async function updateWorkStatus(supabase, employeeId, employeeName, scannerId) { 
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
         
@@ -319,6 +349,9 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
         const now = new Date().toISOString();
         let action = '';
         let newRecord = {};
+        
+        // **新增：** 用于添加到历史记录的文本信息
+        const scannerInfo = scannerId ? ` (由 ${scannerId} 扫描)` : '';
 
         // currentRecord 为 null 表示新员工或记录不存在
         if (currentRecord && currentRecord.is_working) {
@@ -358,7 +391,8 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
                     ...(currentRecord.history || []),
                     {
                         // 记录时，显示两位小数即可
-                        action: `微信扫码下工 - 工作时长: ${fixedWorkTimeHours.toFixed(2)}小时`, 
+                        // **关键：** 在 action 中添加扫描者信息
+                        action: `微信扫码下工${scannerInfo} - 工作时长: ${fixedWorkTimeHours.toFixed(2)}小时`, 
                         timestamp: now
                     }
                 ]
@@ -390,7 +424,8 @@ async function updateWorkStatus(supabase, employeeId, employeeName) {
                 history: [
                     ...(currentRecord?.history || []),
                     {
-                        action: '微信扫码上工',
+                        // **关键：** 在 action 中添加扫描者信息
+                        action: `微信扫码上工${scannerInfo}`,
                         timestamp: now
                     }
                 ]
