@@ -229,6 +229,12 @@
             background-color: #fef9e7;
             color: #f39c12;
         }
+
+        /* 工程师状态用 status-online/status-online */
+        .status-online {
+            background-color: #f0f0f8;
+            color: #3498db;
+        }
         
         .work-time {
             font-size: 14px;
@@ -500,7 +506,7 @@
                         <h2>员工列表</h2>
                         <div class="stats-container">
                             <div class="stat-card">
-                                <div class="stat-label">员工总数</div>
+                                <div class="stat-label">人员总数</div>
                                 <div class="stat-value" id="totalEmployees">0</div>
                             </div>
                             <div class="stat-card">
@@ -629,7 +635,7 @@
             constructor() {
                 // 使用你提供的Supabase配置
                 this.supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
-                this.supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
+                this.supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQzMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
                 this.supabase = supabase.createClient(this.supabaseUrl, this.supabaseKey);
                 this.isOnline = false;
                 this.isRealtimeEnabled = false;
@@ -1558,14 +1564,12 @@
                 } else {
                     showNotification(successMessage, 'success');
                     
-                    // 仅在新增工人时才需要更新这些 UI/同步
-                    if (role === 'worker') {
-                        renderEmployeeList();
-                        updateEmployeeSelect();
-                        updateStats();
-                        // 同步到云端
-                        cloudSync.uploadAllData();
-                    }
+                    // 无论新增工人还是工程师，都需要更新列表
+                    renderEmployeeList();
+                    updateEmployeeSelect();
+                    updateStats();
+                    // 同步到云端 (仅同步工人数据)
+                    cloudSync.uploadAllData();
                 }
             });
         }
@@ -1597,28 +1601,12 @@
             showNotification('表单已清空', 'success');
         }
         
-        // 渲染员工列表
+        // 渲染员工列表 (已增强，包含工程师列表)
         function renderEmployeeList() {
             employeeList.innerHTML = '';
             
-            if (employees.length === 0) {
-                employeeList.innerHTML = '<div class="empty-state">暂无员工信息</div>';
-                totalEmployeesSpan.textContent = '0';
-                workingEmployeesSpan.textContent = '0';
-                return;
-            }
-            
-            // 更新统计
-            totalEmployeesSpan.textContent = employees.length + engineers.length;
-            const workingCount = employees.filter(emp => 
-                workRecords[emp.id] && workRecords[emp.id].isWorking
-            ).length;
-            workingEmployeesSpan.textContent = workingCount;
-            
-            employees.forEach(employee => {
-                const employeeItem = document.createElement('div');
-                employeeItem.className = 'employee-item';
-                
+            // 渲染工人列表
+            const workerListHtml = employees.map(employee => {
                 const isWorking = workRecords[employee.id] && workRecords[employee.id].isWorking;
                 const statusClass = isWorking ? 'status-working' : 'status-idle';
                 const statusText = isWorking ? '工作中' : '未工作';
@@ -1628,33 +1616,72 @@
                 const todayHours = calculateTodayWorkTime(employee.id);
                 const totalHours = calculateTotalWorkTime(employee.id);
                 
-                employeeItem.innerHTML = `
-                    <div class="employee-info">
-                        <div class="employee-name">${employee.name}</div>
-                        <div class="employee-id">工号: ${employee.id}</div>
-                        <div class="work-time-details">
-                            <div class="work-time-item"><span class="work-time-label">今日:</span> ${todayHours} 小时</div>
-                            <div class="work-time-item"><span class="work-time-label">总计:</span> ${totalHours} 小时</div>
+                return `
+                    <div class="employee-item" data-role="worker" data-id="${employee.id}">
+                        <div class="employee-info">
+                            <div class="employee-name">${employee.name} (工人)</div>
+                            <div class="employee-id">工号: ${employee.id}</div>
+                            <div class="work-time-details">
+                                <div class="work-time-item"><span class="work-time-label">今日:</span> ${todayHours} 小时</div>
+                                <div class="work-time-item"><span class="work-time-label">总计:</span> ${totalHours} 小时</div>
+                            </div>
+                            ${startTime ? `<div class="time-info">开始时间: ${formatDateTime(startTime)}</div>` : ''}
                         </div>
-                        ${startTime ? `<div class="time-info">开始时间: ${formatDateTime(startTime)}</div>` : ''}
-                    </div>
-                    <div class="employee-actions">
-                        <div class="employee-status ${statusClass}">${statusText}</div>
-                        <button class="delete-btn" data-id="${employee.id}">删除</button>
+                        <div class="employee-actions">
+                            <div class="employee-status ${statusClass}">${statusText}</div>
+                            <button class="delete-btn delete-worker-btn" data-id="${employee.id}">删除</button>
+                        </div>
                     </div>
                 `;
-                
-                employeeList.appendChild(employeeItem);
-            });
+            }).join('');
+
+            // 渲染工程师列表 (新的部分)
+            const engineerListHtml = engineers.map(engineer => {
+                return `
+                    <div class="employee-item" data-role="engineer" data-id="${engineer.id}">
+                        <div class="employee-info">
+                            <div class="employee-name">${engineer.name} (工程师/扫描者)</div>
+                            <div class="employee-id">工号: ${engineer.id}</div>
+                        </div>
+                        <div class="employee-actions">
+                            <div class="employee-status status-online">身份码</div>
+                            <button class="delete-btn delete-engineer-btn" data-id="${engineer.id}">删除</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // 组合列表
+            if (employees.length === 0 && engineers.length === 0) {
+                employeeList.innerHTML = '<div class="empty-state">暂无人员信息</div>';
+            } else {
+                employeeList.innerHTML = workerListHtml + (engineers.length > 0 ? 
+                    `<h3 style="margin-top: 20px; padding-bottom: 10px; border-bottom: 1px solid #ddd; color: #2c3e50;">工程师列表</h3>` + engineerListHtml : '');
+            }
+            
+            // 更新统计
+            totalEmployeesSpan.textContent = employees.length + engineers.length;
+            const workingCount = employees.filter(emp => 
+                workRecords[emp.id] && workRecords[emp.id].isWorking
+            ).length;
+            workingEmployeesSpan.textContent = workingCount;
             
             // 更新工时排行
             updateWorkRanking();
             
-            // 添加删除按钮事件
-            document.querySelectorAll('.delete-btn').forEach(btn => {
+            // **添加工人删除按钮事件**
+            document.querySelectorAll('.delete-worker-btn').forEach(btn => {
                 btn.addEventListener('click', function() {
                     const employeeId = this.getAttribute('data-id');
                     deleteEmployee(employeeId);
+                });
+            });
+            
+            // **添加工程师删除按钮事件 (新增)**
+            document.querySelectorAll('.delete-engineer-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const engineerId = this.getAttribute('data-id');
+                    deleteEngineer(engineerId); // 调用新的删除函数
                 });
             });
         }
@@ -1697,8 +1724,9 @@
         function updateWorkRanking() {
             workRankingList.innerHTML = '';
             
+            // 只对工人进行工时排行
             if (employees.length === 0) {
-                workRankingList.innerHTML = '<div class="empty-state">暂无数据</div>';
+                workRankingList.innerHTML = '<div class="empty-state">暂无工人数据</div>';
                 return;
             }
             
@@ -1723,9 +1751,9 @@
             });
         }
         
-        // 删除员工
+        // 删除员工 (工人)
         function deleteEmployee(employeeId) {
-            if (confirm('确定要删除该员工吗？此操作不可恢复。')) {
+            if (confirm('确定要删除该工人吗？此操作将同时删除工时记录，不可恢复。')) {
                 const employee = employees.find(emp => emp.id === employeeId);
                 
                 // 从员工列表中移除
@@ -1750,18 +1778,37 @@
                 updateTotalHours();
                 updateStats();
                 
-                showNotification('员工已删除', 'success');
-                addSystemLog(`删除员工: ${employee.name} (${employeeId})`);
+                showNotification('工人已删除', 'success');
+                addSystemLog(`删除工人: ${employee.name} (${employeeId})`);
                 
                 // 从云端删除
                 cloudSync.deleteEmployee(employeeId);
             }
         }
         
+        // **新增：删除工程师**
+        function deleteEngineer(engineerId) {
+            if (confirm('确定要删除该工程师/扫描者吗？')) {
+                const engineer = engineers.find(eng => eng.id === engineerId);
+                
+                // 从工程师列表中移除
+                engineers = engineers.filter(eng => eng.id !== engineerId);
+                localStorage.setItem('engineers', JSON.stringify(engineers));
+                
+                // 更新UI
+                renderEmployeeList();
+                updateStats(); // 更新总人员统计数字
+                
+                showNotification('工程师已删除', 'success');
+                addSystemLog(`删除工程师: ${engineer.name} (${engineerId})`);
+            }
+        }
+
         // 更新员工选择下拉框
         function updateEmployeeSelect() {
             selectedEmployeeSelect.innerHTML = '<option value="">-- 请选择工人 --</option>';
             
+            // 只有工人可以进行工时管理
             employees.forEach(employee => {
                 const option = document.createElement('option');
                 option.value = employee.id;
@@ -1775,7 +1822,7 @@
             const employeeId = selectedEmployeeSelect.value;
             
             if (!employeeId) {
-                showNotification('请先选择员工', 'error');
+                showNotification('请先选择工人', 'error');
                 return;
             }
             
@@ -1793,7 +1840,7 @@
             const record = workRecords[employeeId];
             
             if (record.isWorking) {
-                showNotification('该员工已在工作中', 'error');
+                showNotification('该工人已在工作中', 'error');
                 return;
             }
             
@@ -1813,7 +1860,7 @@
             addWorkHistory(employeeId, `手动开始工作 - ${formatDateTime(Date.now())}`);
             
             // 添加系统日志
-            addSystemLog(`员工 ${employee.name} 手动开始工作`);
+            addSystemLog(`工人 ${employee.name} 手动开始工作`);
             
             // 更新工作历史显示
             renderWorkHistory(employeeId);
@@ -1827,19 +1874,19 @@
             const employeeId = selectedEmployeeSelect.value;
             
             if (!employeeId) {
-                showNotification('请先选择员工', 'error');
+                showNotification('请先选择工人', 'error');
                 return;
             }
             
             if (!workRecords[employeeId]) {
-                showNotification('该员工没有工作记录', 'error');
+                showNotification('该工人没有工作记录', 'error');
                 return;
             }
             
             const record = workRecords[employeeId];
             
             if (!record.isWorking) {
-                showNotification('该员工未在工作', 'error');
+                showNotification('该工人未在工作', 'error');
                 return;
             }
             
@@ -1870,7 +1917,7 @@
             addWorkHistory(employeeId, `手动暂停工作 - 本次工作时长: ${workTimeHours.toFixed(2)}小时`);
             
             // 添加系统日志
-            addSystemLog(`员工 ${employee.name} 手动暂停工作`);
+            addSystemLog(`工人 ${employee.name} 手动暂停工作`);
             
             // 更新工作历史显示
             renderWorkHistory(employeeId);
@@ -1884,12 +1931,12 @@
             const employeeId = selectedEmployeeSelect.value;
             
             if (!employeeId) {
-                showNotification('请先选择员工', 'error');
+                showNotification('请先选择工人', 'error');
                 return;
             }
             
             if (!workRecords[employeeId]) {
-                showNotification('该员工没有可保存的工时记录', 'error');
+                showNotification('该工人没有可保存的工时记录', 'error');
                 return;
             }
             
@@ -1907,7 +1954,7 @@
             
             // 添加系统日志
             const employee = employees.find(emp => emp.id === employeeId);
-            addSystemLog(`保存员工 ${employee.name} 的工时记录`);
+            addSystemLog(`保存工人 ${employee.name} 的工时记录`);
             
             // 同步到云端
             cloudSync.uploadAllData();
