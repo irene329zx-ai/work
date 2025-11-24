@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>工程师登录</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 50px; background: #f5f7fa; }
+        .card { max-width: 400px; margin: 0 auto; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); background: white; }
+        h1 { color: #3498db; margin-bottom: 20px; }
+        input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
+        button { background: #e74c3c; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>初次身份验证</h1>
+        <p>请在此设备上输入您的工程师工号 (D或E)，仅需一次。</p>
+        <input type="text" id="inputId" placeholder="请输入工程师工号">
+        <button onclick="setIdentity()">确认身份并进入</button>
+    </div>
+
+    <script>
+        function setIdentity() {
+            const inputId = document.getElementById('inputId').value.trim().toUpperCase();
+            
+            if (inputId.length < 1) {
+                alert('请输入有效的工号！');
+                return;
+            }
+            
+            // 简单验证：确保输入的 ID 是工程师工号，例如 D 或 E
+            // 生产环境中应调用 Supabase API 验证此 ID 是否为“工程师”
+            if (['D', 'E'].includes(inputId) === false) {
+                 alert('工号验证失败，请输入正确的工程师工号！');
+                 return;
+            }
+
+            // 步骤 1: 将工程师 ID 存入本地缓存
+            localStorage.setItem('scanner_id', inputId);
+            alert(`身份 ${inputId} 已成功设置并缓存到此设备。`);
+            
+            // 步骤 2: 重定向到统一的扫码入口页
+            window.location.href = 'scanner.html'; 
+        }
+    </script>
+</body>
+</html>

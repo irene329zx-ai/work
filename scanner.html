@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>统一扫码入口</title>
+    <style>
+        /* ... (CSS 保持不变) ... */
+        body { font-family: sans-serif; text-align: center; padding: 50px; }
+        .card { max-width: 400px; margin: 0 auto; padding: 30px; border: 1px solid #ddd; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        h1 { color: #3498db; }
+        p { margin-bottom: 20px; }
+        button { background: #2ecc71; color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 18px; }
+        .reset-btn { background: #e74c3c; margin-top: 15px; padding: 8px 15px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1 id="scannerName">身份识别中...</h1>
+        <p>请点击下方按钮，扫描**工人**的考勤二维码</p>
+        <button id="scanBtn" onclick="startScan()" style="display:none;">开始扫描工人二维码</button>
+        <button class="reset-btn" onclick="resetIdentity()">切换/重设身份</button>
+        <p style="margin-top: 20px; color: #e74c3c;">确保您使用的是您自己的设备！</p>
+    </div>
+
+    <script>
+        let scannerId = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // 步骤 1: 检查本地缓存
+            scannerId = localStorage.getItem('scanner_id');
+
+            if (scannerId) {
+                // 身份已缓存，直接进入
+                document.getElementById('scannerName').textContent = `身份已确认: ${scannerId}`;
+                document.getElementById('scanBtn').style.display = 'block';
+            } else {
+                // 身份缺失，重定向到登录页
+                window.location.href = 'engineer-login.html';
+            }
+        });
+
+        function resetIdentity() {
+            if (confirm("确定要清除当前缓存的身份并重新登录吗？")) {
+                localStorage.removeItem('scanner_id');
+                window.location.href = 'engineer-login.html';
+            }
+        }
+
+        function startScan() {
+            if (!scannerId) {
+                alert('身份未确认，请重试或重设身份。');
+                return;
+            }
+            
+            // 【重要】实际生产环境中，请用真实的扫码API替换以下代码：
+            const qrResult = prompt(`【模拟扫码】请输入工人二维码链接中的全部URL，例如：\nhttps://yourdomain.com/scan-success.html?id=A&name=WorkerA`);
+
+            if (!qrResult) return;
+
+            try {
+                const url = new URL(qrResult);
+                
+                // 确保扫描的是正确的考勤页
+                if (url.pathname.includes('scan-success.html')) {
+                    // 步骤 2: 将缓存的工程师 ID 附加到工人的考勤URL上
+                    url.searchParams.set('scanner_id', scannerId);
+                    window.location.href = url.toString();
+                } else {
+                    alert('扫描的不是有效的工人考勤二维码！');
+                }
+            } catch (e) {
+                alert('扫描结果无效。');
+            }
+        }
+    </script>
+</body>
+</html>
