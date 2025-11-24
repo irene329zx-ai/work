@@ -144,8 +144,8 @@ async function fallbackToRestAPI(employeeId, employeeName) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY',
-                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY',
+                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv/KpC-x97B_1r39lgBTGY',
+                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv/KpC-x97B_1r39lgBTGY',
                 'Prefer': 'return=minimal'
             },
             body: JSON.stringify(scanData) // 使用包含 scanner_id 的 scanData
@@ -280,7 +280,7 @@ async function recordAttendance(employeeId, employeeName) {
         
         // 初始化Supabase
         const supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
-        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv/KpC-x97B_1r39lgBTGY';
         const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
         
         showDebug('loadingDebug', '1. 插入扫码记录...');
@@ -330,7 +330,7 @@ async function recordAttendance(employeeId, employeeName) {
     }
 }
 
-// 更新工作状态 - 核心逻辑 (已更新)
+// 更新工作状态 - 核心逻辑 (**已优化: 添加 duration 字段**)
 async function updateWorkStatus(supabase, employeeId, employeeName, scannerId) { 
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
@@ -393,9 +393,9 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId) {
                     ...(currentRecord.history || []),
                     {
                         // 记录时，显示两位小数即可
-                        // **关键：** 在 action 中添加扫描者信息
                         action: `微信扫码下工${scannerInfo} - 工作时长: ${fixedWorkTimeHours.toFixed(2)}小时`, 
-                        timestamp: now
+                        timestamp: now,
+                        duration: fixedWorkTimeHours // **【优化点】新增 duration 字段**
                     }
                 ]
             };
@@ -426,9 +426,9 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId) {
                 history: [
                     ...(currentRecord?.history || []),
                     {
-                        // **关键：** 在 action 中添加扫描者信息
                         action: `微信扫码上工${scannerInfo}`,
-                        timestamp: now
+                        timestamp: now,
+                        duration: 0 // **【优化点】上工记录 duration 为 0**
                     }
                 ]
             };
