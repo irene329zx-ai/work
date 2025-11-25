@@ -10,7 +10,7 @@
             margin: 0;
             padding: 20px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 10vh;
+            min-height: 100vh; /* 确保占满整个视口 */
             display: flex;
             align-items: center;
             justify-content: center;
@@ -31,6 +31,7 @@
         .success { color: #4CAF50; }
         .error { color: #e74c3c; }
         .loading { color: #3498db; }
+        .input-icon { color: #f39c12; } /* 新增输入状态图标颜色 */
         h1 { color: #333; margin-bottom: 15px; }
         .info { background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; }
         .debug { 
@@ -63,6 +64,23 @@
             <p>正在记录考勤信息</p>
             <div class="debug" id="loadingDebug"></div>
         </div>
+        
+        <div id="inputState" style="display: none;">
+            <div class="icon input-icon">📝</div>
+            <h1>填写考勤信息</h1>
+            <p>请为 <span id="workerNameInput" style="font-weight: bold;">--</span> 填写用工地点和工种。</p>
+            
+            <div style="text-align: left; margin: 20px 0;">
+                <label for="workLocation" style="font-weight: bold; display: block; margin-bottom: 5px;">用工地点：</label>
+                <input type="text" id="workLocation" placeholder="例：A区主体结构" required style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 5px;">
+                
+                <label for="workType" style="font-weight: bold; display: block; margin-bottom: 5px;">工种：</label>
+                <input type="text" id="workType" placeholder="例：电焊工" required style="width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            
+            <button id="submitAttendance">提交考勤</button>
+            <div class="debug" id="inputDebug"></div>
+        </div>
 
         <div id="successState" style="display: none;">
             <div class="icon success">✅</div>
@@ -70,6 +88,7 @@
             <div class="info">
                 <div style="font-size: 18px; font-weight: bold;" id="successName">--</div>
                 <div style="color: #666;" id="successId">工号: --</div>
+                <div style="color: #3498db; margin-top: 8px;">地点: <span id="successLocation"></span> | 工种: <span id="successWorkType"></span></div>
             </div>
             <p id="successTime"></p>
             <p style="color: #999; font-size: 14px;" id="closeInfo"></p>
@@ -89,6 +108,10 @@
     </div>
 
 <script>
+// 全局变量，用于存储用户输入的地点和工种
+let globalLocation = '';
+let globalWorkType = '';
+
 // 直接从URL获取参数
 function getUrlParams() {
     const params = new URLSearchParams(window.location.search);
@@ -104,7 +127,8 @@ function getScannerIdFromLocal() {
     
     // **重要：** 无论是否读取到，都尝试清除，防止身份信息长期保留
     if (scannerId) { 
-        localStorage.removeItem('active_scanner_id'); 
+        // 考勤成功后不会立即清除，保留到记录考勤时一起清除，以防失败重试
+        // 为了安全和避免身份残留，这里只读取，不在考勤成功之前主动清除
     }
     return scannerId;
 }
@@ -130,7 +154,10 @@ async function fallbackToRestAPI(employeeId, employeeName) {
     const scanData = {
         employee_id: employeeId,
         user_agent: navigator.userAgent,
-        scan_time: new Date().toISOString()
+        scan_time: new Date().toISOString(),
+        // 【新增】包含用工地点和工种
+        work_location: globalLocation, 
+        work_type: globalWorkType, 
     };
     
     // 如果存在 scannerId，则加入到数据中
@@ -148,12 +175,14 @@ async function fallbackToRestAPI(employeeId, employeeName) {
                 'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY',
                 'Prefer': 'return=minimal'
             },
-            body: JSON.stringify(scanData) // 使用包含 scanner_id 的 scanData
+            body: JSON.stringify(scanData) // 使用包含 scanner_id 和新增字段的 scanData
         });
 
         if (response.ok) {
+            // **成功时清除扫描者身份**
+            localStorage.removeItem('active_scanner_id'); 
             showDebug('errorDebug', '备用方案成功！数据已记录。');
-            showSuccess(employeeName, employeeId, '（通过备用方案）');
+            showSuccess(employeeName, employeeId, globalLocation, globalWorkType, '（通过备用方案）');
             return true;
         } else {
             const errorText = await response.text();
@@ -165,14 +194,18 @@ async function fallbackToRestAPI(employeeId, employeeName) {
     }
 }
 
-// 显示成功页面
-function showSuccess(name, id, action = '') {
+// 显示成功页面 (已更新，加入地点和工种参数)
+function showSuccess(name, id, location, workType, action = '') {
     document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('inputState').style.display = 'none'; // 隐藏输入状态
     document.getElementById('errorState').style.display = 'none';
     document.getElementById('successState').style.display = 'block';
     
     document.getElementById('successName').textContent = name;
     document.getElementById('successId').textContent = `工号: ${id}`;
+    // 【新增】显示地点和工种
+    document.getElementById('successLocation').textContent = location;
+    document.getElementById('successWorkType').textContent = workType;
     
     // 显示具体的操作结果
     if (action) {
@@ -183,6 +216,9 @@ function showSuccess(name, id, action = '') {
     
     document.getElementById('closeInfo').textContent = '本页面将自动关闭';
     
+    // **成功时清除扫描者身份**
+    localStorage.removeItem('active_scanner_id'); 
+
     setTimeout(() => {
         try { window.close(); } 
         catch (e) { 
@@ -194,26 +230,82 @@ function showSuccess(name, id, action = '') {
 // 显示错误页面
 function showError(message) {
     document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('inputState').style.display = 'none'; // 隐藏输入状态
     document.getElementById('successState').style.display = 'none';
     document.getElementById('errorState').style.display = 'block';
     document.getElementById('errorMessage').textContent = message;
 }
 
+// 【新增】展示输入界面
+function showInputState(name, id) {
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('errorState').style.display = 'none';
+    document.getElementById('successState').style.display = 'none';
+    
+    const inputState = document.getElementById('inputState');
+    inputState.style.display = 'block';
+    document.getElementById('workerNameInput').textContent = name;
+    
+    // 绑定提交按钮事件
+    document.getElementById('submitAttendance').onclick = async () => {
+        const locationInput = document.getElementById('workLocation');
+        const workTypeInput = document.getElementById('workType');
+        
+        globalLocation = locationInput.value.trim();
+        globalWorkType = workTypeInput.value.trim();
+        
+        if (!globalLocation || !globalWorkType) {
+            alert('用工地点和工种不能为空！');
+            locationInput.focus();
+            return;
+        }
+        
+        // 切换回加载状态
+        document.getElementById('inputState').style.display = 'none';
+        document.getElementById('loadingState').style.display = 'block';
+        
+        // 执行考勤记录
+        const params = getUrlParams();
+        const workStatusResult = await recordAttendance(params.id, params.name);
+
+        if (workStatusResult && workStatusResult.action) {
+            showSuccess(params.name, params.id, globalLocation, globalWorkType, workStatusResult.action);
+        } else {
+            showError('考勤记录失败，请使用备用方案');
+        }
+    };
+}
+
+
 // 重试函数
 function retry() {
+    // 重试时，我们回到输入状态，确保地点和工种不会丢失
+    const params = getUrlParams();
     document.getElementById('errorState').style.display = 'none';
-    document.getElementById('loadingState').style.display = 'block';
+    // 重置全局变量
+    globalLocation = '';
+    globalWorkType = '';
+    // 重新进入输入流程
+    showInputState(params.name, params.id);
     document.getElementById('errorDebug').innerHTML = '';
-    setTimeout(init, 500);
 }
 
 // 使用备用方案
 function useFallback() {
     const params = getUrlParams();
+    
+    // 如果没有经过输入阶段，则警告并要求输入 (防止直接从错误页进入备用方案)
+    if (!globalLocation || !globalWorkType) {
+        alert('请先填写用工地点和工种后再使用备用方案！');
+        document.getElementById('errorState').style.display = 'none';
+        showInputState(params.name, params.id);
+        return;
+    }
+    
     fallbackToRestAPI(params.id, params.name);
 }
 
-// 主初始化函数
+// 主初始化函数 (已修改：只进行加载，然后进入输入状态)
 async function init() {
     const params = getUrlParams();
     showDebug('loadingDebug', `员工: ${params.name} (${params.id})`);
@@ -229,18 +321,10 @@ async function init() {
         // 动态加载Supabase库
         await loadSupabase();
         
-        showDebug('loadingDebug', 'Supabase加载完成，开始记录数据...');
+        // Supabase加载完成后，进入输入状态
+        showDebug('loadingDebug', 'Supabase加载完成，准备输入考勤信息...');
         
-        // 记录考勤
-        const workStatusResult = await recordAttendance(params.id, params.name);
-
-        if (workStatusResult && workStatusResult.action) {
-            showSuccess(params.name, params.id, workStatusResult.action);
-        } else if (workStatusResult) {
-            showSuccess(params.name, params.id, '考勤');
-        } else {
-            showError('考勤记录失败，请使用备用方案');
-        }
+        showInputState(params.name, params.id);
         
     } catch (error) {
         console.error('初始化失败:', error);
@@ -269,12 +353,13 @@ function loadSupabase() {
     });
 }
 
-// 记录考勤 - 完整版本 (已更新，使用 getScannerIdFromLocal)
+// 记录考勤 - 完整版本 (已更新，将地点和工种加入扫码记录)
 async function recordAttendance(employeeId, employeeName) {
     try {
         // **关键：** 从 localStorage 获取扫描者 ID
         const scannerId = getScannerIdFromLocal(); 
         showDebug('loadingDebug', `扫描者 ID: ${scannerId || '未识别'}`);
+        showDebug('loadingDebug', `用工地点: ${globalLocation}, 工种: ${globalWorkType}`); // 调试信息
         
         showDebug('loadingDebug', '初始化Supabase客户端...');
         
@@ -289,7 +374,10 @@ async function recordAttendance(employeeId, employeeName) {
         const scanRecord = { 
             employee_id: employeeId,
             user_agent: navigator.userAgent,
-            scan_time: new Date().toISOString()
+            scan_time: new Date().toISOString(),
+            // 【新增】地点和工种
+            work_location: globalLocation, 
+            work_type: globalWorkType 
         };
         
         if (scannerId) { // 如果存在 scannerId，则加入
@@ -299,7 +387,7 @@ async function recordAttendance(employeeId, employeeName) {
         // 1. 插入扫码记录
         const { data: scanData, error: scanError } = await supabase
             .from('wechat_scans')
-            .insert([scanRecord]) // 使用包含 scanner_id 的记录对象
+            .insert([scanRecord]) // 使用包含 scanner_id 和新增字段的记录对象
             .select();
 
         if (scanError) {
@@ -313,7 +401,7 @@ async function recordAttendance(employeeId, employeeName) {
         
         // 2. 更新工作状态（这是关键！）
         // 将 scannerId 传递给 updateWorkStatus
-        const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName, scannerId); 
+        const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName, scannerId, globalLocation, globalWorkType); 
         
         if (workStatusResult.success) {
             showDebug('successDebug', `工作状态更新成功: ${workStatusResult.action}`);
@@ -330,13 +418,12 @@ async function recordAttendance(employeeId, employeeName) {
     }
 }
 
-// 更新工作状态 - 核心逻辑 (已更新)
-async function updateWorkStatus(supabase, employeeId, employeeName, scannerId) { 
+// 更新工作状态 - 核心逻辑 (已更新，在历史记录中加入地点和工种信息)
+async function updateWorkStatus(supabase, employeeId, employeeName, scannerId, location, workType) { 
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
         
         // 1. 获取员工当前的工作状态
-        // 使用 .maybeSingle() 来允许 0 行记录（新员工）返回 null
         const { data: currentRecord, error: fetchError } = await supabase
             .from('work_records')
             .select('*')
@@ -354,6 +441,7 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId) {
         
         // 用于添加到历史记录的文本信息
         const scannerInfo = scannerId ? ` (由 ${scannerId} 扫描)` : '';
+        const locationInfo = location ? ` [地点: ${location}, 工种: ${workType}]` : '';
 
         // currentRecord 为 null 表示新员工或记录不存在
         if (currentRecord && currentRecord.is_working) {
@@ -392,9 +480,8 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId) {
                 history: [
                     ...(currentRecord.history || []),
                     {
-                        // 记录时，显示两位小数即可
-                        // **关键：** 在 action 中添加扫描者信息
-                        action: `微信扫码下工${scannerInfo} - 工作时长: ${fixedWorkTimeHours.toFixed(2)}小时`, 
+                        // **关键：** 在 action 中添加扫描者信息、地点和工种
+                        action: `微信扫码下工${scannerInfo}${locationInfo} - 工作时长: ${fixedWorkTimeHours.toFixed(2)}小时`, 
                         timestamp: now
                     }
                 ]
@@ -426,8 +513,8 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId) {
                 history: [
                     ...(currentRecord?.history || []),
                     {
-                        // **关键：** 在 action 中添加扫描者信息
-                        action: `微信扫码上工${scannerInfo}`,
+                        // **关键：** 在 action 中添加扫描者信息、地点和工种
+                        action: `微信扫码上工${scannerInfo}${locationInfo}`,
                         timestamp: now
                     }
                 ]
