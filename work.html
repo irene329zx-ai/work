@@ -2272,12 +2272,14 @@
                 
                 // 显示扫描者信息
                 const scannerInfo = scan.scanner_id ? ` (扫描者: ${scannerName})` : '';
+                const locationInfo = scan.work_location || 'N/A';
+                const workTypeInfo = scan.work_type || 'N/A';
 
                 scanItem.innerHTML = `
                     <div><strong>${workerName}</strong> (${scan.employee_id}) ${scannerInfo}</div>
+                    <div style="font-size: 13px; color: #2c3e50;">地点: ${locationInfo} | 工种: ${workTypeInfo}</div>
                     <div class="wechat-scan-time">${scanTime}</div>
                 `;
-
                 wechatScansList.appendChild(scanItem);
             });
         }
