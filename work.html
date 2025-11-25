@@ -1465,7 +1465,7 @@
             toggleRealtimeBtn.addEventListener('click', async () => {
                 if (cloudSync.isRealtimeEnabled) {
                     cloudSync.disableRealtimeSync();
-                    toggleRealtimeBtn.textContent = '开启实时同步';
+                    toggleRealtimeBtn.textContent = '关闭实时同步';
                 } else {
                     const success = await cloudSync.enableRealtimeSync();
                     if (success) {
