@@ -54,6 +54,15 @@
             margin: 5px;
         }
         .retry-btn { background: #e74c3c; }
+        
+        /* 新增：下工状态提示框样式 */
+        .stop-work-prompt {
+            background: #ffeaa7;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border: 1px solid #f39c12;
+        }
     </style>
 </head>
 <body>
@@ -65,9 +74,24 @@
             <div class="debug" id="loadingDebug"></div>
         </div>
         
+        <div id="stopWorkState" style="display: none;">
+            <div class="icon input-icon">🛑</div>
+            <h1>下工确认</h1>
+            <div class="stop-work-prompt">
+                <p><strong><span id="workerNameStop">--</span></strong> 正在工作中。</p>
+                <p style="font-size: 14px; margin-top: 10px;">
+                    上次上工地点：<span id="lastLocation">N/A</span><br>
+                    上次上工工种：<span id="lastWorkType">N/A</span>
+                </p>
+            </div>
+            <p>是否确认**下工**？</p>
+            <button id="confirmStopWork" class="retry-btn">确认下工</button>
+            <div class="debug" id="stopWorkDebug"></div>
+        </div>
+        
         <div id="inputState" style="display: none;">
             <div class="icon input-icon">📝</div>
-            <h1>填写考勤信息</h1>
+            <h1>填写考勤信息 (上工)</h1>
             <p>请为 <span id="workerNameInput" style="font-weight: bold;">--</span> 填写用工地点和工种。</p>
             
             <div style="text-align: left; margin: 20px 0;">
@@ -78,7 +102,7 @@
                 <input type="text" id="workType" placeholder="例：电焊工" required style="width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 5px;">
             </div>
             
-            <button id="submitAttendance">提交考勤</button>
+            <button id="submitAttendance">提交上工</button>
             <div class="debug" id="inputDebug"></div>
         </div>
 
@@ -111,6 +135,7 @@
 // 全局变量，用于存储用户输入的地点和工种
 let globalLocation = '';
 let globalWorkType = '';
+let supabaseInstance = null; // 存储 Supabase 客户端实例
 
 // 直接从URL获取参数
 function getUrlParams() {
@@ -121,10 +146,9 @@ function getUrlParams() {
     };
 }
 
-// **关键修改：使用 localStorage 读取并清除扫描者ID**
+// 获取扫描者ID
 function getScannerIdFromLocal() {
-    const scannerId = localStorage.getItem('active_scanner_id');
-    return scannerId;
+    return localStorage.getItem('active_scanner_id');
 }
 
 // 显示调试信息
@@ -137,11 +161,20 @@ function showDebug(elementId, message) {
     }
 }
 
-// 备用方案：使用Fetch API直接调用Supabase REST API (已更新)
-async function fallbackToRestAPI(employeeId, employeeName) {
+// 初始化Supabase客户端
+function initializeSupabase() {
+    if (supabaseInstance) return supabaseInstance;
+
+    const supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
+    supabaseInstance = window.supabase.createClient(supabaseUrl, supabaseKey);
+    return supabaseInstance;
+}
+
+// 备用方案：使用Fetch API直接调用Supabase REST API
+async function fallbackToRestAPI(employeeId, employeeName, location, workType) {
     showDebug('errorDebug', '尝试备用方案...');
     
-    // 从 localStorage 获取扫描者 ID
     const scannerId = getScannerIdFromLocal(); 
     showDebug('errorDebug', `扫描者ID: ${scannerId || '未识别'}`);
     
@@ -149,18 +182,15 @@ async function fallbackToRestAPI(employeeId, employeeName) {
         employee_id: employeeId,
         user_agent: navigator.userAgent,
         scan_time: new Date().toISOString(),
-        // 【新增】包含用工地点和工种
-        work_location: globalLocation, 
-        work_type: globalWorkType, 
+        work_location: location, 
+        work_type: workType, 
     };
     
-    // 如果存在 scannerId，则加入到数据中
     if (scannerId) {
         scanData.scanner_id = scannerId;
     }
 
     try {
-        // 使用Supabase REST API直接插入数据
         const response = await fetch('https://ynkmlbczkcporjdpawbr.supabase.co/rest/v1/wechat_scans', {
             method: 'POST',
             headers: {
@@ -169,12 +199,12 @@ async function fallbackToRestAPI(employeeId, employeeName) {
                 'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY',
                 'Prefer': 'return=minimal'
             },
-            body: JSON.stringify(scanData) // 使用包含 scanner_id 和新增字段的 scanData
+            body: JSON.stringify(scanData)
         });
 
         if (response.ok) {
             showDebug('errorDebug', '备用方案成功！数据已记录。');
-            showSuccess(employeeName, employeeId, globalLocation, globalWorkType, '（通过备用方案）');
+            showSuccess(employeeName, employeeId, location, workType, '（通过备用方案）');
             return true;
         } else {
             const errorText = await response.text();
@@ -186,30 +216,27 @@ async function fallbackToRestAPI(employeeId, employeeName) {
     }
 }
 
-// 显示成功页面 (已更新，加入地点和工种参数)
+// 显示成功页面
 function showSuccess(name, id, location, workType, action = '') {
     document.getElementById('loadingState').style.display = 'none';
-    document.getElementById('inputState').style.display = 'none'; // 隐藏输入状态
+    document.getElementById('inputState').style.display = 'none'; 
+    document.getElementById('stopWorkState').style.display = 'none'; // 新增：隐藏下工确认状态
     document.getElementById('errorState').style.display = 'none';
     document.getElementById('successState').style.display = 'block';
     
     document.getElementById('successName').textContent = name;
     document.getElementById('successId').textContent = `工号: ${id}`;
-    // 【新增】显示地点和工种
     document.getElementById('successLocation').textContent = location;
     document.getElementById('successWorkType').textContent = workType;
     
-    // 显示具体的操作结果
     if (action) {
         document.getElementById('successTime').textContent = `${action}成功 - 时间: ${new Date().toLocaleString('zh-CN')}`;
     } else {
         document.getElementById('successTime').textContent = `时间: ${new Date().toLocaleString('zh-CN')}`;
     }
     
-    // 提示：由于身份信息不会被清除，工程师可以继续扫码
     document.getElementById('closeInfo').textContent = '身份已保留。请手动退出此页面，扫描下一位工人。'; 
     
-    // 延迟，但现在我们希望保留身份，所以可能不自动关闭
     setTimeout(() => {
         try { 
             document.getElementById('closeInfo').textContent = '身份已保留。请手动退出此页面，扫描下一位工人。';
@@ -220,24 +247,22 @@ function showSuccess(name, id, location, workType, action = '') {
     }, 3000);
 }
 
-// 【关键修改点 2：修改 showError 函数，支持详细消息】
 // 显示错误页面
 function showError(title, message) {
     document.getElementById('loadingState').style.display = 'none';
     document.getElementById('inputState').style.display = 'none'; 
+    document.getElementById('stopWorkState').style.display = 'none'; // 新增：隐藏下工确认状态
     document.getElementById('successState').style.display = 'none';
     document.getElementById('errorState').style.display = 'block';
     
     const errorContainer = document.getElementById('errorState').querySelector('div');
     
-    // 如果传入了两个参数，则第一个是标题，第二个是详细信息
     if (message) {
          document.getElementById('errorMessage').innerHTML = `<strong>${title}</strong><br><br>${message}`;
     } else {
          document.getElementById('errorMessage').textContent = title;
     }
 
-    // 身份认证失败时，不提供重试和备用方案按钮
     if (title.includes('认证身份')) {
         errorContainer.innerHTML = 
             '<p style="margin-top: 15px; font-weight: bold; color: #7f8c8d;">完成认证后请重新扫描工人二维码。</p>';
@@ -250,9 +275,47 @@ function showError(title, message) {
     }
 }
 
-// 【新增】展示输入界面
+// 【新增】展示下工确认界面
+function showStopWorkState(name, id, location, workType) {
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('inputState').style.display = 'none';
+    document.getElementById('errorState').style.display = 'none';
+    document.getElementById('successState').style.display = 'none';
+    
+    const stopWorkState = document.getElementById('stopWorkState');
+    stopWorkState.style.display = 'block';
+    document.getElementById('workerNameStop').textContent = name;
+    document.getElementById('lastLocation').textContent = location || '（记录缺失）';
+    document.getElementById('lastWorkType').textContent = workType || '（记录缺失）';
+    
+    // 将地点和工种存储为全局变量，供考勤记录使用
+    globalLocation = location;
+    globalWorkType = workType;
+    
+    // 绑定确认下工按钮事件
+    document.getElementById('confirmStopWork').onclick = async () => {
+        // 切换回加载状态
+        stopWorkState.style.display = 'none';
+        document.getElementById('loadingState').style.display = 'block';
+        
+        // 执行考勤记录
+        const params = getUrlParams();
+        
+        // 传入下工时所需的地点和工种（从上次上工记录中获取）
+        const workStatusResult = await recordAttendance(params.id, params.name, globalLocation, globalWorkType);
+
+        if (workStatusResult && workStatusResult.action) {
+            showSuccess(params.name, params.id, globalLocation, globalWorkType, workStatusResult.action);
+        } else {
+            showError('考勤记录失败', '请使用备用方案或检查网络连接。');
+        }
+    };
+}
+
+// 【新增】展示输入界面 (仅用于上工)
 function showInputState(name, id) {
     document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('stopWorkState').style.display = 'none'; // 新增：隐藏下工确认状态
     document.getElementById('errorState').style.display = 'none';
     document.getElementById('successState').style.display = 'none';
     
@@ -278,9 +341,9 @@ function showInputState(name, id) {
         document.getElementById('inputState').style.display = 'none';
         document.getElementById('loadingState').style.display = 'block';
         
-        // 执行考勤记录
+        // 执行考勤记录 (上工)
         const params = getUrlParams();
-        const workStatusResult = await recordAttendance(params.id, params.name);
+        const workStatusResult = await recordAttendance(params.id, params.name, globalLocation, globalWorkType);
 
         if (workStatusResult && workStatusResult.action) {
             showSuccess(params.name, params.id, globalLocation, globalWorkType, workStatusResult.action);
@@ -291,24 +354,25 @@ function showInputState(name, id) {
 }
 
 
-// 重试函数
+// 重试函数 (回到输入状态)
 function retry() {
-    // 重试时，我们回到输入状态，确保地点和工种不会丢失
     const params = getUrlParams();
     document.getElementById('errorState').style.display = 'none';
+    
+    // 如果是网络错误，我们重新进行状态检测
     // 重置全局变量
     globalLocation = '';
     globalWorkType = '';
-    // 重新进入输入流程
-    showInputState(params.name, params.id);
-    document.getElementById('errorDebug').innerHTML = '';
+    
+    // 重新启动流程
+    init();
 }
 
-// 使用备用方案
+// 使用备用方案 (使用当前已有的全局 location/workType)
 function useFallback() {
     const params = getUrlParams();
     
-    // 如果没有经过输入阶段，则警告并要求输入 (防止直接从错误页进入备用方案)
+    // 如果全局变量为空，强制要求输入
     if (!globalLocation || !globalWorkType) {
         alert('请先填写用工地点和工种后再使用备用方案！');
         document.getElementById('errorState').style.display = 'none';
@@ -316,10 +380,46 @@ function useFallback() {
         return;
     }
     
-    fallbackToRestAPI(params.id, params.name);
+    fallbackToRestAPI(params.id, params.name, globalLocation, globalWorkType);
 }
 
-// 主初始化函数 (已修改：只进行加载，然后进入输入状态)
+// 【新增函数】获取工人最近的上工记录（用于下工时显示地点和工种）
+async function getLastWorkDetails(employeeId) {
+    const supabase = initializeSupabase();
+    
+    // 1. 查找最新的上工记录 (action 包含 '上工' 的历史记录)
+    const { data: record, error } = await supabase
+        .from('work_records')
+        .select('history')
+        .eq('employee_id', employeeId)
+        .maybeSingle();
+
+    if (error || !record || !record.history || record.history.length === 0) {
+        return { location: null, workType: null };
+    }
+
+    // 2. 遍历历史记录，找到最近的上工记录，并从中提取地点和工种
+    for (let i = record.history.length - 1; i >= 0; i--) {
+        const historyItem = record.history[i];
+        
+        // 检查 action 是否包含 "扫码上工" 
+        if (historyItem.action.includes('扫码上工')) {
+            // 提取 [地点: X, 工种: Y] 部分
+            const match = historyItem.action.match(/\[地点: (.*?), 工种: (.*?)\]/);
+            if (match && match.length === 3) {
+                return {
+                    location: match[1],
+                    workType: match[2]
+                };
+            }
+        }
+    }
+    
+    return { location: null, workType: null };
+}
+
+
+// 主初始化函数 (已修改：新增状态检测逻辑)
 async function init() {
     const params = getUrlParams();
     showDebug('loadingDebug', `员工: ${params.name} (${params.id})`);
@@ -329,38 +429,61 @@ async function init() {
         return;
     }
 
-    // 【关键修改点 1：强制检查工程师身份】
+    // 强制检查工程师身份
     const currentScannerId = getScannerIdFromLocal();
     if (!currentScannerId) {
-        // 如果没有扫描者ID，则显示错误信息并阻止后续操作
         showError('⚠️ 考勤前请先认证身份！', '请**先扫描您的工程师身份码**进行身份确认，然后再扫描工人二维码。');
-        return; // 强制退出
+        return;
     }
-    showDebug('loadingDebug', `已认证工程师ID: ${currentScannerId}`); // 显示认证信息
-    // 【关键修改点 1 结束】
+    showDebug('loadingDebug', `已认证工程师ID: ${currentScannerId}`);
 
     try {
         showDebug('loadingDebug', '正在加载Supabase库...');
-        
-        // 动态加载Supabase库
         await loadSupabase();
+        const supabase = initializeSupabase();
+        showDebug('loadingDebug', 'Supabase加载完成，检测工人当前状态...');
+
+        // 1. 获取员工当前的工作状态
+        const { data: currentRecord, error: fetchError } = await supabase
+            .from('work_records')
+            .select('is_working')
+            .eq('employee_id', params.id)
+            .maybeSingle();
+            
+        if (fetchError && fetchError.code !== 'PGRST116') {
+             throw new Error("查询状态失败: " + fetchError.message);
+        }
+
+        const isWorking = currentRecord?.is_working || false;
         
-        // Supabase加载完成后，进入输入状态
-        showDebug('loadingDebug', 'Supabase加载完成，准备输入考勤信息...');
-        
-        showInputState(params.name, params.id);
+        if (isWorking) {
+            // 状态：正在工作 (执行下工流程)
+            showDebug('loadingDebug', '工人正在工作中，进入下工确认流程。');
+            
+            // 2. 获取上工时的地点和工种
+            const lastDetails = await getLastWorkDetails(params.id);
+            
+            // 3. 进入下工确认界面，并使用上工时的地点和工种作为下工记录
+            showStopWorkState(params.name, params.id, lastDetails.location, lastDetails.workType);
+
+        } else {
+            // 状态：未工作 (执行上工流程)
+            showDebug('loadingDebug', '工人未在工作，进入上工信息填写流程。');
+            
+            // 2. 进入上工信息填写界面
+            showInputState(params.name, params.id);
+        }
         
     } catch (error) {
         console.error('初始化失败:', error);
         showDebug('errorDebug', '错误详情: ' + error.message);
-        showError('系统加载失败', '请使用备用方案或联系管理员。');
+        showError('系统加载或状态检测失败', '请检查网络或联系管理员。');
     }
 }
 
 // 动态加载Supabase
 function loadSupabase() {
     return new Promise((resolve, reject) => {
-        // 检查是否已加载
         if (window.supabase) {
             resolve();
             return;
@@ -369,7 +492,6 @@ function loadSupabase() {
         const script = document.createElement('script');
         script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
         script.onload = () => {
-            // 给点时间让库初始化
             setTimeout(resolve, 100);
         };
         script.onerror = () => reject(new Error('Failed to load Supabase'));
@@ -377,20 +499,13 @@ function loadSupabase() {
     });
 }
 
-// 记录考勤 - 完整版本 (已更新，将地点和工种加入扫码记录)
-async function recordAttendance(employeeId, employeeName) {
+// 记录考勤 - 核心记录函数
+async function recordAttendance(employeeId, employeeName, location, workType) {
     try {
-        // **关键：** 从 localStorage 获取扫描者 ID
+        const supabase = initializeSupabase();
         const scannerId = getScannerIdFromLocal(); 
-        showDebug('loadingDebug', `扫描者 ID: ${scannerId || '未识别'}`);
-        showDebug('loadingDebug', `用工地点: ${globalLocation}, 工种: ${globalWorkType}`); // 调试信息
         
-        showDebug('loadingDebug', '初始化Supabase客户端...');
-        
-        // 初始化Supabase
-        const supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
-        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
-        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+        showDebug('loadingDebug', `用工地点: ${location}, 工种: ${workType}`); 
         
         showDebug('loadingDebug', '1. 插入扫码记录...');
         
@@ -399,16 +514,15 @@ async function recordAttendance(employeeId, employeeName) {
             employee_id: employeeId,
             user_agent: navigator.userAgent,
             scan_time: new Date().toISOString(),
-            // 【新增】地点和工种
-            work_location: globalLocation, 
-            work_type: globalWorkType 
+            work_location: location, 
+            work_type: workType 
         };
         
-        if (scannerId) { // 如果存在 scannerId，则加入
+        if (scannerId) {
             scanRecord.scanner_id = scannerId;
         }
         
-        // 1. 插入扫码记录
+        // 1. 插入扫码记录 (包含地点和工种)
         const { data: scanData, error: scanError } = await supabase
             .from('wechat_scans')
             .insert([scanRecord])
@@ -416,7 +530,6 @@ async function recordAttendance(employeeId, employeeName) {
 
         if (scanError) {
             showDebug('errorDebug', '扫码记录插入失败(不影响考勤): ' + scanError.message);
-            // 继续尝试更新工作状态，不直接返回
         } else {
             showDebug('successDebug', '扫码记录插入成功');
         }
@@ -424,7 +537,7 @@ async function recordAttendance(employeeId, employeeName) {
         showDebug('loadingDebug', '2. 更新工作状态...');
         
         // 2. 更新工作状态（这是关键！）
-        const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName, scannerId, globalLocation, globalWorkType); 
+        const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName, scannerId, location, workType); 
         
         if (workStatusResult.success) {
             showDebug('successDebug', `工作状态更新成功: ${workStatusResult.action}`);
@@ -443,16 +556,13 @@ async function recordAttendance(employeeId, employeeName) {
 // 更新工作状态 - 核心逻辑 (优化：下工时历史记录不重复记录地点工种)
 async function updateWorkStatus(supabase, employeeId, employeeName, scannerId, location, workType) { 
     try {
-        showDebug('loadingDebug', '获取当前工作状态...');
-        
-        // 1. 获取员工当前的工作状态
+        // 1. 获取员工当前的工作状态 (重新获取，确保在记录前的最后确认)
         const { data: currentRecord, error: fetchError } = await supabase
             .from('work_records')
             .select('*')
             .eq('employee_id', employeeId)
             .maybeSingle();
 
-        // 如果存在其他类型的错误（非 0 行或 1 行的错误），则抛出
         if (fetchError && fetchError.code !== 'PGRST116') {
             throw fetchError;
         }
@@ -461,26 +571,21 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId, l
         let action = '';
         let newRecord = {};
         
-        // 用于添加到历史记录的文本信息
         const scannerInfo = scannerId ? ` (由 ${scannerId} 扫描)` : '';
-        // 关键改动：locationInfo 只在上工时使用
         let locationInfo = ''; 
 
-        // currentRecord 为 null 表示新员工或记录不存在
         if (currentRecord && currentRecord.is_working) {
             // 情况1：员工正在工作 → 暂停工作 (下工)
-            showDebug('loadingDebug', '员工正在工作，执行下工操作...');
             action = '下工';
             
-            // 【解决精度问题】计算本次工作时长
-            const startTime = new Date(currentRecord.start_time).getTime(); // 获取毫秒时间戳
+            // 计算本次工作时长
+            const startTime = new Date(currentRecord.start_time).getTime(); 
             const rawDurationMs = Math.max(100, new Date().getTime() - startTime); 
             const workTimeHours = rawDurationMs / (1000 * 60 * 60);
 
             const fixedWorkTimeHours = parseFloat(workTimeHours.toFixed(4)); 
             const newTotalHours = (parseFloat(currentRecord.total_hours) || 0) + fixedWorkTimeHours;
             
-            // 处理今日工时
             let newTodayHours = parseFloat(currentRecord.today_hours) || 0;
             if (currentRecord.start_time && new Date().toDateString() === new Date(currentRecord.start_time).toDateString()) {
                 newTodayHours += fixedWorkTimeHours;
@@ -499,7 +604,7 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId, l
                 history: [
                     ...(currentRecord.history || []),
                     {
-                        // 历史记录中只记录下工动作和时长，不再记录地点/工种
+                        // 下工时不记录地点/工种
                         action: `微信扫码下工${scannerInfo} - 工作时长: ${fixedWorkTimeHours.toFixed(2)}小时`, 
                         timestamp: now
                     }
@@ -508,7 +613,6 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId, l
             
         } else {
             // 情况2：员工未工作或记录不存在（含新员工） → 开始工作 (上工)
-            showDebug('loadingDebug', '员工未工作/新员工，执行上工操作...');
             action = '上工';
             
             // 只有上工时才构造并记录地点/工种信息
@@ -534,15 +638,13 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId, l
                 history: [
                     ...(currentRecord?.history || []),
                     {
-                        // **关键：** 在 action 中添加扫描者信息、地点和工种
+                        // **关键：** 上工时记录地点和工种
                         action: `微信扫码上工${scannerInfo}${locationInfo}`,
                         timestamp: now
                     }
                 ]
             };
         }
-
-        showDebug('loadingDebug', `执行${action}操作，更新数据...`);
         
         // 插入或更新工作记录
         const { data: workData, error: workError } = await supabase
@@ -557,8 +659,6 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId, l
             throw new Error(`工作记录更新失败: ${workError.message}`);
         }
         
-        showDebug('successDebug', `${action}操作成功完成`);
-
         return {
             success: true,
             action: action,
