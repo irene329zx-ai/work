@@ -101,7 +101,12 @@
                 <input type="text" id="workLocation" placeholder="例：A区主体结构" required style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 5px;">
                 
                 <label for="workType" style="font-weight: bold; display: block; margin-bottom: 5px;">工种：</label>
-                <input type="text" id="workType" placeholder="例：电焊工" required style="width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 5px;">
+                <select id="workType" required style="width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 5px; appearance: none; background-color: white;">
+                    <option value="" disabled selected>-- 请选择工种 --</option>
+                    <option value="粗工">粗工</option>
+                    <option value="清洁工">清洁工</option>
+                    <option value="拆除工">拆除工</option>
+                </select>
             </div>
             
             <button id="submitAttendance">提交上工</button>
@@ -316,6 +321,7 @@ function showInputState(name, id) {
         globalLocation = locationInput.value.trim();
         globalWorkType = workTypeInput.value.trim();
         
+        // **注意：下拉菜单需要判断 value 是否为 ""**
         if (!globalLocation || !globalWorkType) {
             alert('用工地点和工种不能为空！');
             locationInput.focus();
