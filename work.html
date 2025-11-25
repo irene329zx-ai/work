@@ -1874,128 +1874,18 @@
             workHistoryList.innerHTML = tableHTML;
         }
 
-        // --- 新增：计价工数计算逻辑 ---
-
+        // --- 核心月工时计算函数 (恢复到只计算总工时) ---
+        
         /**
-         * 【工程师计算逻辑 - 基于监督人数，不再基于工时】
-         * 获取工程师的监督工数（从 wechat_scans 统计人数）
-         * @param {string} scannerId - 工程师 ID
-         * @param {string} yearMonth - 年月字符串 (如 '2025-11')
-         * @returns {Promise<{totalUnits: number, supervisionDays: number}>} - 总工数和监督天数
-         */
-        async function getEngineerSupervisionUnits(scannerId, yearMonth) {
-            if (!cloudSync.supabase) return { totalUnits: 0, supervisionDays: 0 };
-            
-            // 1. 确定月份的起始和结束时间
-            const [year, month] = yearMonth.split('-').map(Number);
-            const startOfMonth = new Date(year, month - 1, 1).toISOString();
-            const endOfMonth = new Date(year, month, 1).toISOString();
-            
-            // 2. 查询该工程师在该月所有的扫码记录
-            const { data: scans, error } = await cloudSync.supabase
-                .from('wechat_scans')
-                .select('employee_id, scan_time') 
-                .eq('scanner_id', scannerId)
-                .gte('scan_time', startOfMonth) 
-                .lt('scan_time', endOfMonth);
-                
-            if (error) {
-                console.error('查询工程师监督记录失败:', error);
-                return { totalUnits: 0, supervisionDays: 0 };
-            }
-            
-            const dailySupervision = {}; // Key: YYYY-MM-DD
-            
-            // 3. 按天统计去重后的监督人数 (即每日工数)
-            (scans || []).forEach(scan => {
-                // 提取日期 (YYYY-MM-DD)
-                const scanDate = new Date(scan.scan_time).toISOString().split('T')[0];
-                
-                if (!dailySupervision[scanDate]) {
-                    dailySupervision[scanDate] = new Set();
-                }
-                // 记录当天监督的工人ID（去重）
-                dailySupervision[scanDate].add(scan.employee_id);
-            });
-            
-            let totalUnits = 0;
-            const supervisionDays = Object.keys(dailySupervision).length;
-
-            // 4. 计算总工数 (每日监督人数相加)
-            Object.values(dailySupervision).forEach(employeeSet => {
-                // 每日工数 = 当日监督的去重人数
-                totalUnits += employeeSet.size;
-            });
-
-            return { 
-                totalUnits: parseFloat(totalUnits.toFixed(1)), // 工程师的工数没有小数，但保持格式
-                supervisionDays 
-            };
-        }
-
-        /**
-         * 员工规则计算单段工作时间的工数和零散分钟数 - 【已修复：处理 17:00-18:00 休息和零散分钟累计】
-         * @param {Date} start - 工作开始时间 (UTC+8)
-         * @param {Date} end - 工作结束时间 (UTC+8)
-         * @returns {{units: number, hourlyMinutes: number}} - 满足整工的工数和零散分钟数
-         */
-        function calculateWorkerUnitsForPeriod(start, end) {
-            let units = 0;
-            let hourlyMinutes = 0; 
-            
-            const MS_PER_MIN = 1000 * 60;
-
-            // 辅助函数：计算重叠并分配工数/小时数
-            function processSegment(s_start_h, s_start_m, s_end_h, s_end_m, full_unit_duration_h) {
-                let seg_start = new Date(start); seg_start.setHours(s_start_h, s_start_m, 0, 0);
-                
-                let seg_end = new Date(start); 
-                // 处理跨日 (24+小时)
-                const end_day_offset = Math.floor(s_end_h / 24);
-                seg_end.setDate(seg_end.getDate() + end_day_offset); 
-                seg_end.setHours(s_end_h % 24, s_end_m, 0, 0); 
-                
-                const overlap_ms = Math.min(end.getTime(), seg_end.getTime()) - Math.max(start.getTime(), seg_start.getTime());
-                
-                if (overlap_ms > 0) {
-                    const overlap_minutes = overlap_ms / MS_PER_MIN;
-                    const full_duration_minutes = full_unit_duration_h * 60;
-                    
-                    if (overlap_minutes >= full_duration_minutes) { 
-                        units += 1; 
-                    } else {
-                        hourlyMinutes += overlap_minutes; // 不满1工，累加原始分钟数
-                    }
-                }
-            }
-
-            // S1: 8:00-17:00 (9h, 1工)
-            processSegment(8, 0, 17, 0, 9);
-            
-            // S2: 18:00-23:00 (5h, 1工) - 17:00-18:00 休息时段
-            processSegment(18, 0, 23, 0, 5);
-
-            // S3: 23:00-03:00 next day (4h, 1工)
-            processSegment(23, 0, 27, 0, 4); // 27 = 03:00 next day
-
-            // S4: 03:00-07:00 next day (4h, 1工)
-            processSegment(27, 0, 31, 0, 4); // 31 = 07:00 next day
-            
-            return { units, hourlyMinutes };
-        }
-
-        /**
-         * 计算指定月份的总工数 (包含跨日切分逻辑) - 【仅对工人有效】
+         * 计算指定月份的总工时 (仅计算实际工时，用于统计和报表)
          * @param {string} employeeId - 员工 ID
          * @param {string} yearMonth - 年月字符串 (如 '2025-11')
          * @param {Array<object>} workHistory - 该员工的 history 记录
-         * @returns {{totalHours: number, totalUnits: number, totalHourlyUnits: number}} - 总时数、总工数、总零散小时数
+         * @returns {number} - 总工时 (小时)
          */
-        function calculateWorkerMonthlyUnits(employeeId, yearMonth, workHistory) {
-            let totalUnits = 0;
-            let totalHourlyMinutes = 0; // 存储总零散分钟数
-
-            // 筛选出符合月份的工时记录
+        function calculateMonthlyTotalHours(employeeId, yearMonth, workHistory) {
+            let totalHours = 0;
+            
             const recordsInMonth = workHistory.filter(h => 
                 new Date(h.timestamp).toISOString().startsWith(yearMonth)
             );
@@ -2020,44 +1910,12 @@
                 }
             }
             
-            // 核心计算：按 06:00 边界切分，然后对每一段应用规则
-            for (const session of workSessions) {
-                let current = session.start;
-                const end = session.end;
+            // 累加总时数 
+            totalHours = workSessions.reduce((acc, session) => acc + (session.end - session.start) / (1000 * 60 * 60), 0);
 
-                while (current < end) {
-                    let nextBoundary = new Date(current);
-                    nextBoundary.setHours(6, 0, 0, 0); // 设置到今天的 06:00
-                    
-                    // 如果 current 在 06:00 或之后，则下一个边界应该是明天的 06:00
-                    if (current.getHours() >= 6) {
-                        nextBoundary.setDate(nextBoundary.getDate() + 1);
-                    }
-                    
-                    // 实际结尾时间：取 记录结束时间 或 下一个 06:00 边界的最小值
-                    let periodEnd = Math.min(end.getTime(), nextBoundary.getTime());
-                    
-                    const workerUnits = calculateWorkerUnitsForPeriod(current, new Date(periodEnd));
-                    totalUnits += workerUnits.units;
-                    totalHourlyMinutes += workerUnits.hourlyMinutes; // 累加分钟数
-
-                    current = new Date(periodEnd); 
-                }
-            }
-            
-            // 重新计算总时数 
-            const totalHours = workSessions.reduce((acc, session) => acc + (session.end - session.start) / (1000 * 60 * 60), 0);
-
-            // **核心修复:** 仅在最后对累计的零散分钟数进行一次向上取整到小时
-            // 0.1小时 (6分钟) -> Math.ceil(6/60) = Math.ceil(0.1) = 1小时
-            const finalHourlyUnits = Math.ceil(totalHourlyMinutes / 60);
-
-            return {
-                totalHours: parseFloat(totalHours.toFixed(2)),
-                totalUnits: parseFloat(totalUnits.toFixed(1)),
-                totalHourlyUnits: finalHourlyUnits 
-            };
+            return parseFloat(totalHours.toFixed(2));
         }
+
 
         // **修改：计算月工时并渲染报表**
         async function calculatePayroll() {
@@ -2077,40 +1935,26 @@
 
             const payrollDetails = {};
             
-            // 2. 遍历所有员工和工程师
+            // 2. 遍历所有工人（工程师不显示在工时报表中）
             const allPersonnel = employees.concat(engineers.map(e => ({...e, isEngineer: true})));
 
             for (const personnel of allPersonnel) {
                 const employeeId = personnel.id;
                 const isEngineer = !!personnel.isEngineer;
                 
-                let totalHours = 0;
-                let totalUnits = 0;
-                let totalHourlyUnits = 0;
-
-                if (isEngineer) {
-                    // 【工程师计价逻辑：查询 wechat_scans 表】
-                    const engineerResult = await getEngineerSupervisionUnits(employeeId, monthInput);
-                    totalUnits = engineerResult.totalUnits;
-                    totalHours = 0; // 工程师的工时不再用于此处的计价
-                    
-                } else {
-                    // 【工人计价逻辑：使用 work_records 历史】
-                    const record = workRecords[employeeId];
-                    if (!record || !Array.isArray(record.history)) continue;
-
-                    const workerResult = calculateWorkerMonthlyUnits(employeeId, monthInput, record.history);
-                    totalHours = workerResult.totalHours;
-                    totalUnits = workerResult.totalUnits;
-                    totalHourlyUnits = workerResult.totalHourlyUnits;
-                }
+                // 工程师不显示在工时统计表中
+                if (isEngineer) continue;
                 
-                if (totalHours > 0 || totalUnits > 0 || totalHourlyUnits > 0) {
+                const record = workRecords[employeeId];
+                
+                if (!record || !Array.isArray(record.history)) continue;
+
+                // 【恢复到原始逻辑：只计算总工时】
+                const totalHours = calculateMonthlyTotalHours(employeeId, monthInput, record.history);
+                
+                if (totalHours > 0) {
                     payrollDetails[employeeId] = {
-                        totalHours: totalHours,
-                        totalUnits: totalUnits,
-                        totalHourlyUnits: totalHourlyUnits,
-                        isEngineer: isEngineer
+                        totalHours: totalHours
                     };
                 }
             }
@@ -2119,22 +1963,13 @@
             showNotification('月工时计算完成', 'success');
         }
 
-        // **修改：渲染工资统计表格**
+        // **修改：渲染工资统计表格 (删除计价工数)**
         function renderPayrollTable(payrollDetails, monthInput) {
             const resultsContainer = payrollResultsContainer;
             const monthName = monthInput.replace('-', '年') + '月';
             
-            // 排序：优先显示工人 (非工程师)，然后按总工时排序
-            const employeeIds = Object.keys(payrollDetails).sort((a, b) => {
-                const aIsEngineer = payrollDetails[a].isEngineer;
-                const bIsEngineer = payrollDetails[b].isEngineer;
-                
-                if (aIsEngineer !== bIsEngineer) {
-                    return aIsEngineer ? 1 : -1; // 工人 (false) 排在工程师 (true) 前面
-                }
-                // 相同类型按总工时排序
-                return payrollDetails[b].totalHours - payrollDetails[a].totalHours;
-            });
+            // 排序：按总工时排序
+            const employeeIds = Object.keys(payrollDetails).sort((a, b) => payrollDetails[b].totalHours - payrollDetails[a].totalHours);
 
             if (employeeIds.length === 0) {
                 resultsContainer.innerHTML = `<div class="empty-state">在 ${monthName} 没有找到工时记录。</div>`;
@@ -2152,7 +1987,6 @@
                         <tr style="background: #f0f0f0;">
                             <th style="padding: 10px; border: 1px solid #ddd;">姓名/工号</th>
                             <th style="padding: 10px; border: 1px solid #ddd; width: 150px; text-align: right;">总工时 (小时)</th>
-                            <th style="padding: 10px; border: 1px solid #ddd; width: 180px; text-align: right;">计价工数 (工)</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2162,26 +1996,10 @@
                 const details = payrollDetails[employeeId];
                 const name = getPersonnelName(employeeId);
                 
-                let unitsDisplay = '';
-                if (details.isEngineer) {
-                    // 工程师显示监督总工数 (人数)
-                    unitsDisplay = `${details.totalUnits.toFixed(0)} 工 (监督人数)`;
-                } else {
-                    // 工人显示时段工数 + 零散小时
-                    if (details.totalHourlyUnits > 0) {
-                         // totalUnits 是整工部分，totalHourlyUnits 是向上取整后的零散小时
-                         const units = Math.floor(details.totalUnits);
-                         unitsDisplay = `${units} 工 + ${details.totalHourlyUnits} 小时`;
-                    } else {
-                         unitsDisplay = `${details.totalUnits.toFixed(1)} 工`;
-                    }
-                }
-                
                 tableHTML += `
                     <tr>
                         <td style="padding: 10px; border: 1px solid #ddd;">${name} (${employeeId})</td>
                         <td style="padding: 10px; border: 1px solid #ddd; text-align: right; font-weight: bold; color: #3498db;">${details.totalHours.toFixed(2)}</td>
-                        <td style="padding: 10px; border: 1px solid #ddd; text-align: right; font-weight: bold; color: #e67e22;">${unitsDisplay}</td>
                     </tr>
                 `;
             });
