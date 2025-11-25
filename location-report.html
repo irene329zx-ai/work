@@ -63,19 +63,29 @@
         button:hover {
             background-color: #2980b9;
         }
+        /* 新增：滚动条样式，用于容纳更多工种列 */
+        .report-table-wrapper {
+            overflow-x: auto;
+        }
+        table {
+            min-width: 800px; /* 确保表格不会被压缩太小 */
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>今日用工地点汇总报表</h1>
+            <h1>用工地点汇总报表</h1>
         </header>
         <div class="card">
-            <h2>统计时间：<span id="reportDate">加载中...</span> 
-                <button onclick="fetchReport()">刷新报表</button>
+            <h2>
+                请选择统计日期：
+                <input type="date" id="reportDateInput" required style="padding: 8px; border-radius: 5px; border: 1px solid #ddd; font-size: 14px; margin-right: 10px;">
+                <button onclick="fetchReport()">查询报表</button>
             </h2>
+            
             <div id="reportContainer">
-                <div class="empty-state">正在加载或暂无今日用工记录...</div>
+                <div class="empty-state">请选择日期并点击查询...</div>
             </div>
         </div>
     </div>
@@ -83,18 +93,17 @@
     <script>
         // Supabase 配置
         const supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
-        // 使用 work.html 中提供的 Key
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
         
-        // 【修复 1】将 Supabase 客户端定义为全局变量，等待 SDK 加载
         let supabase = null; 
 
         document.addEventListener('DOMContentLoaded', function() {
-            // 【修复 2】在 DOM 加载完成后，再安全地创建 Supabase 客户端
             try {
                 if (window.supabase) {
                     supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
-                    document.getElementById('reportDate').textContent = new Date().toLocaleDateString('zh-CN');
+                    // 设置默认日期为今天
+                    const today = new Date();
+                    document.getElementById('reportDateInput').valueAsDate = today;
                     fetchReport(); // 首次加载数据
                 } else {
                     document.getElementById('reportContainer').innerHTML = '<div class="empty-state error">错误: Supabase SDK 未加载。请检查网络。</div>';
@@ -107,47 +116,62 @@
 
         async function fetchReport() {
             if (!supabase) {
-                // 如果在初始化前被点击，防止 ReferenceError
                 document.getElementById('reportContainer').innerHTML = '<div class="empty-state">正在初始化连接，请稍候再试...</div>';
+                return;
+            }
+            
+            const dateInput = document.getElementById('reportDateInput').value;
+            if (!dateInput) {
+                alert('请选择查询日期');
                 return;
             }
             
             document.getElementById('reportContainer').innerHTML = '<div class="empty-state">正在查询数据...</div>';
 
             try {
-                // 获取今天凌晨的时间作为查询起点
-                const startOfToday = new Date();
-                startOfToday.setHours(0, 0, 0, 0);
-                const todayISO = startOfToday.toISOString();
+                // 获取选定日期的开始时间
+                const selectedDate = new Date(dateInput);
+                selectedDate.setHours(0, 0, 0, 0); 
+                const startOfDay = selectedDate.toISOString();
 
-                // 1. 查询今天的扫码记录 (需要 work_location 和 work_type 字段已存在于 wechat_scans 表中)
+                // 获取第二天的开始时间（用于限定查询范围）
+                const endOfDay = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000).toISOString();
+
+                // 1. 查询选定日期的扫码记录
                 const { data: scans, error } = await supabase
                     .from('wechat_scans')
                     .select('employee_id, work_location, work_type')
-                    .gte('scan_time', todayISO); 
+                    .gte('scan_time', startOfDay) // 大于等于选定日期的 00:00:00
+                    .lt('scan_time', endOfDay);   // 小于第二天的 00:00:00
 
                 if (error) {
                     throw new Error(error.message);
                 }
 
-                // 2. 数据聚合
-                const locationReport = {}; // 存储 {location: {employees: Set(), workTypes: Set()}}
+                // 2. 数据聚合 (修改为按工种分类统计人数)
+                const locationReport = {}; 
 
                 scans.forEach(scan => {
-                    // 确保地点和工种字段存在，否则使用占位符
                     const loc = scan.work_location || '（未填写地点）';
                     const type = scan.work_type || '（未填写工种）';
 
                     if (!locationReport[loc]) {
                         locationReport[loc] = {
-                            employees: new Set(),
-                            workTypes: new Set()
+                            employees: new Set(),         // 统计总人数（去重）
+                            workTypesCount: {},           // 核心：存储 {type: count}
+                            employeeWorkTypeKey: new Set() // 辅助：存储 'employeeId-workType' 键用于去重统计工种人数
                         };
                     }
                     
-                    // 统计去重后的员工和工种
+                    // 统计去重后的员工总人数（只要扫码就算一个人）
                     locationReport[loc].employees.add(scan.employee_id);
-                    locationReport[loc].workTypes.add(type);
+                    
+                    // 统计工种人数：按 'employee_id' + 'work_type' 组合去重
+                    const key = `${scan.employee_id}-${type}`;
+                    if (!locationReport[loc].employeeWorkTypeKey.has(key)) {
+                        locationReport[loc].workTypesCount[type] = (locationReport[loc].workTypesCount[type] || 0) + 1;
+                        locationReport[loc].employeeWorkTypeKey.add(key);
+                    }
                 });
 
                 // 3. 渲染报表
@@ -161,35 +185,64 @@
         function renderReportTable(reportData) {
             const container = document.getElementById('reportContainer');
             const locations = Object.keys(reportData).sort();
+            const selectedDate = document.getElementById('reportDateInput').value;
 
             if (locations.length === 0) {
-                container.innerHTML = '<div class="empty-state">今日暂无用工记录。</div>';
+                container.innerHTML = `<div class="empty-state">${selectedDate} 暂无用工记录。</div>`;
                 return;
             }
 
+            // 1. 收集所有出现过的工种，并排序
+            const allWorkTypes = new Set();
+            locations.forEach(loc => {
+                Object.keys(reportData[loc].workTypesCount).forEach(type => {
+                    allWorkTypes.add(type);
+                });
+            });
+            const sortedWorkTypes = Array.from(allWorkTypes).sort();
+
             let tableHTML = `
+                <h3 style="margin-bottom: 15px;">用工统计 (${selectedDate})</h3>
+                <div class="report-table-wrapper">
                 <table style="width: 100%; border-collapse: collapse; text-align: left;">
                     <thead>
                         <tr style="background: #f0f0f0;">
                             <th style="padding: 10px; border: 1px solid #ddd;">用工地点</th>
-                            <th style="padding: 10px; border: 1px solid #ddd; width: 150px; text-align: right;">总人数 (去重)</th>
-                            <th style="padding: 10px; border: 1px solid #ddd; width: 150px; text-align: right;">包含工种数</th>
+                            <th style="padding: 10px; border: 1px solid #ddd; width: 120px; text-align: right;">总人数 (去重)</th>
+            `;
+
+            // 2. 动态添加工种列头
+            sortedWorkTypes.forEach(type => {
+                tableHTML += `<th style="padding: 10px; border: 1px solid #ddd; width: 80px; text-align: right; white-space: nowrap;">${type}</th>`;
+            });
+
+            tableHTML += `
                         </tr>
                     </thead>
                     <tbody>
             `;
 
+            // 3. 动态填充数据行
             locations.forEach(loc => {
                 const data = reportData[loc];
                 const totalEmployees = data.employees.size;
-                const totalWorkTypes = data.workTypes.size;
-                const workTypesList = Array.from(data.workTypes).join(', '); // 显示工种列表
 
                 tableHTML += `
                     <tr>
-                        <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; color: #3498db;">${loc}</td>
-                        <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${totalEmployees} 人</td>
-                        <td style="padding: 10px; border: 1px solid #ddd; text-align: right;" title="${workTypesList}">${totalWorkTypes} 种</td>
+                        <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; color: #3498db; white-space: nowrap;">${loc}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd; text-align: right; font-weight: bold;">${totalEmployees} 人</td>
+                `;
+                
+                // 动态填充每个工种的人数
+                sortedWorkTypes.forEach(type => {
+                    // 获取该地点该工种的人数，没有则为 0
+                    const count = data.workTypesCount[type] || 0; 
+                    tableHTML += `
+                        <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${count > 0 ? count : '-'}</td>
+                    `;
+                });
+                
+                tableHTML += `
                     </tr>
                 `;
             });
@@ -197,6 +250,7 @@
             tableHTML += `
                     </tbody>
                 </table>
+                </div>
             `;
 
             container.innerHTML = tableHTML;
