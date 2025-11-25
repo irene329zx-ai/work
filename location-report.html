@@ -110,7 +110,7 @@
         
         let supabase = null; 
         let cachedScans = [];      // 缓存当前查询月的所有扫码记录，用于导出
-        let employeeNameMap = {}; // 存储员工ID到姓名的映射 {id: name}
+        let allWorkTypes = new Set(); // 缓存所有出现过的工种名称
 
         document.addEventListener('DOMContentLoaded', function() {
             try {
@@ -122,10 +122,8 @@
                     const month = String(today.getMonth() + 1).padStart(2, '0');
                     document.getElementById('reportMonthInput').value = `${year}-${month}`;
                     
-                    fetchPersonnelNames().then(map => {
-                        employeeNameMap = map;
-                        fetchAndDisplayReport();
-                    });
+                    // 不需要预加载姓名，因为报表不再显示员工姓名
+                    fetchAndDisplayReport();
                 } else {
                     document.getElementById('reportContainer').innerHTML = '<div class="empty-state error">错误: Supabase SDK 未加载。请检查网络。</div>';
                 }
@@ -134,36 +132,10 @@
             }
         });
         
-        // 辅助函数：从云端获取所有员工和工程师的姓名映射
-        async function fetchPersonnelNames() {
-            const nameMap = {};
-            try {
-                const { data: employees, error: empError } = await supabase.from('employees').select('id, name');
-                if (!empError && employees) {
-                    employees.forEach(emp => nameMap[emp.id] = emp.name);
-                }
-
-                const { data: scanners, error: scanError } = await supabase.from('scanners').select('id, name');
-                if (!scanError && scanners) {
-                    scanners.forEach(scan => nameMap[scan.id] = scan.name);
-                }
-
-            } catch (e) {
-                console.error("获取人员姓名失败:", e);
-            }
-            return nameMap;
-        }
-
         // 辅助函数：将 ISO 时间戳格式化为本地日期 (MM/DD)
         function formatLocalDay(isoString) {
             const date = new Date(isoString);
             return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }).replace(/\//g, '/');
-        }
-        
-        // 辅助函数：将 ISO 时间戳格式化为本地时间 (HH:MM:SS)
-        function formatLocalTime(isoString) {
-            const date = new Date(isoString);
-            return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
         }
 
         // ===============================================
@@ -183,25 +155,24 @@
                 const startOfMonth = new Date(year, month - 1, 1).toISOString();
                 const endOfMonth = new Date(year, month, 1).toISOString();
 
-                // !!! 核心修改：避免查询 scanner_id 以防止 Column不存在错误 !!!
-                // *** 警告: 即使代码中不查询，如果您的数据库中没有 scanner_id，导出表格的备注将是空的。 ***
+                // 尝试查询所有需要的字段
                 const { data: scans, error } = await supabase
                     .from('wechat_scans')
-                    .select('employee_id, work_location, work_type, scan_time, scanner_id') // 仍尝试查询 scanner_id，如果报错请删除 scanner_id
+                    .select('employee_id, work_location, work_type, scan_time, scanner_id') 
                     .gte('scan_time', startOfMonth) 
                     .lt('scan_time', endOfMonth);   
 
                 if (error) {
-                    // 如果查询失败，可能是因为 scanner_id 字段缺失，尝试再次查询，但这次不包含它
+                    // 容错处理：如果查询失败（例如 scanner_id 字段不存在），再次尝试查询，但移除 scanner_id
                     if (error.message.includes('scanner_id')) {
                          console.warn("初始查询失败，尝试不包含 scanner_id 再次查询...");
                          const { data: safeScans, error: safeError } = await supabase
                              .from('wechat_scans')
-                             .select('employee_id, work_location, work_type, scan_time') // 移除 scanner_id
+                             .select('employee_id, work_location, work_type, scan_time') 
                              .gte('scan_time', startOfMonth) 
                              .lt('scan_time', endOfMonth);
                              
-                         if (safeError) throw safeError; // 如果再次查询失败，抛出错误
+                         if (safeError) throw safeError; 
                          
                          // 重新构造数据，将 scanner_id 设置为 null
                          cachedScans = (safeScans || []).map(s => ({ ...s, scanner_id: null }));
@@ -226,6 +197,9 @@
         
         function aggregateDataForDisplay(scans) {
              const locationReport = {}; 
+             // 重置工种列表
+             allWorkTypes = new Set();
+             
              scans.forEach(scan => {
                  const loc = scan.work_location || '（未填写地点）';
                  const type = scan.work_type || '（未填写工种）';
@@ -238,12 +212,15 @@
                      };
                  }
                  
+                 // 统计去重后的员工总人数
                  locationReport[loc].employees.add(scan.employee_id);
                  
+                 // 统计工种人数：按 'employee_id' + 'work_type' 组合去重
                  const key = `${scan.employee_id}-${type}`;
                  if (!locationReport[loc].employeeWorkTypeKey.has(key)) {
                      locationReport[loc].workTypesCount[type] = (locationReport[loc].workTypesCount[type] || 0) + 1;
                      locationReport[loc].employeeWorkTypeKey.add(key);
+                     allWorkTypes.add(type); // 收集工种名称
                  }
              });
              return locationReport;
@@ -259,12 +236,6 @@
                 return;
             }
 
-            const allWorkTypes = new Set();
-            locations.forEach(loc => {
-                Object.keys(reportData[loc].workTypesCount).forEach(type => {
-                    allWorkTypes.add(type);
-                });
-            });
             const sortedWorkTypes = Array.from(allWorkTypes).sort();
 
             let tableHTML = `
@@ -319,7 +290,7 @@
         }
         
         // ===============================================
-        // 核心功能 2: 导出 Excel (按地点分表，明细报表)
+        // 核心功能 2: 导出 Excel (按地点分表，按日/工程师汇总)
         // ===============================================
 
         async function exportMonthlyReport() {
@@ -328,87 +299,120 @@
                 return;
             }
             
-            const groupedByLocation = {};
+            // 1. 获取所有工种列表 (用于动态表头)
+            const allTypes = Array.from(allWorkTypes).sort();
+            
+            // 2. 按 地点-日期-工程师 聚合数据
+            const finalReport = {}; // Key: 'location-day-scannerId'
+            
             cachedScans.forEach(scan => {
                 const loc = scan.work_location || 'N/A';
-                if (!groupedByLocation[loc]) {
-                    groupedByLocation[loc] = [];
+                const day = formatLocalDay(scan.scan_time);
+                const scannerId = scan.scanner_id || 'N/A';
+                const workerId = scan.employee_id;
+                const workerType = scan.work_type || 'N/A';
+
+                const key = `${loc}-${day}-${scannerId}`;
+
+                if (!finalReport[key]) {
+                    finalReport[key] = {
+                        '日期': day,
+                        '用工地点': loc,
+                        '备注 (工程师工号)': scannerId,
+                        '总人数': new Set(),         // 统计总人数（去重）
+                        '工种统计': {}               // 存储 {type: Set<employeeId>}
+                    };
                 }
-                groupedByLocation[loc].push(scan);
+                
+                // 统计总人数（去重）
+                finalReport[key]['总人数'].add(workerId);
+
+                // 统计工种数量（按工种分组，统计工人ID去重）
+                if (!finalReport[key]['工种统计'][workerType]) {
+                    finalReport[key]['工种统计'][workerType] = new Set();
+                }
+                finalReport[key]['工种统计'][workerType].add(workerId);
             });
             
+            // 3. 准备工作簿
             const wb = XLSX.utils.book_new();
             const monthInput = document.getElementById('reportMonthInput').value;
             
-            for (const [location, scans] of Object.entries(groupedByLocation)) {
+            // 4. 按地点分表
+            const groupedByLocation = {};
+            Object.values(finalReport).forEach(record => {
+                const loc = record['用工地点'];
+                if (!groupedByLocation[loc]) {
+                    groupedByLocation[loc] = [];
+                }
+                groupedByLocation[loc].push(record);
+            });
+
+
+            for (const [location, records] of Object.entries(groupedByLocation)) {
                 
-                // 3. 聚合员工的当日记录：同一天同一地点，只保留一条上工记录，并合并所有扫描者 ID
-                const dailyAggregatedData = {}; // Key: 'employeeId-day'
-                
-                scans.forEach(scan => {
-                    const day = formatLocalDay(scan.scan_time);
-                    const key = `${scan.employee_id}-${day}`;
-                    
-                    const newRecord = {
-                        '日期': day,
-                        '工号': scan.employee_id,
-                        '姓名': employeeNameMap[scan.employee_id] || 'N/A', 
-                        '工种': scan.work_type || 'N/A',
-                        // 注意：如果数据库缺少 scanner_id，这里将是 null 或 undefined
-                        '备注 (工程师工号)': scan.scanner_id || 'N/A' 
+                // 5. 将聚合后的记录转换为 Excel 行格式
+                const sheetData = records.map(record => {
+                    const row = {
+                        '日期': record['日期'],
+                        '用工地点': record['用工地点'],
+                        '总人数 (去重)': record['总人数'].size,
                     };
                     
-                    if (!dailyAggregatedData[key]) {
-                        // 首次记录：直接使用
-                        dailyAggregatedData[key] = newRecord;
-                    } else {
-                        // 重复记录：合并工程师 ID
-                        const existingRemark = dailyAggregatedData[key]['备注 (工程师工号)'];
-                        
-                        // 确保 existingRemark 不是 'N/A' 且 scan.scanner_id 有值
-                        if (scan.scanner_id && existingRemark !== 'N/A' && !existingRemark.includes(scan.scanner_id)) {
-                            dailyAggregatedData[key]['备注 (工程师工号)'] = existingRemark + `, ${scan.scanner_id}`;
-                        } else if (scan.scanner_id && existingRemark === 'N/A') {
-                             // 如果现有备注是 N/A，则替换为新的 scanner_id
-                             dailyAggregatedData[key]['备注 (工程师工号)'] = scan.scanner_id;
-                        }
-
-                        // 如果需要更精细的时间管理，则需要连接 work_records 表。
-                    }
+                    // 动态添加工种列
+                    allTypes.forEach(type => {
+                        const count = record['工种统计'][type] ? record['工种统计'][type].size : 0;
+                        row[type] = count > 0 ? count : '-';
+                    });
+                    
+                    row['备注 (工程师工号)'] = record['备注 (工程师工号)'];
+                    
+                    return row;
                 });
                 
-                // 4. 将聚合后的数据转换为工作表数组
-                let sheetData = Object.values(dailyAggregatedData);
-                
-                // 5. 添加合计行
-                const totalCount = sheetData.length;
-                sheetData.push({ 
-                    '日期': `合计人数:`, 
-                    '工号': totalCount, 
-                    '姓名': '', 
-                    '工种': '', 
-                    '备注 (工程师工号)': '' 
-                });
-
-
-                // 6. 排序：按日期和工号排序 (排除最后一行合计)
-                sheetData.slice(0, -1).sort((a, b) => {
+                // 6. 排序：按日期和工程师工号排序
+                sheetData.sort((a, b) => {
                     if (a['日期'] !== b['日期']) {
                         return a['日期'].localeCompare(b['日期']);
                     }
-                    return a['工号'].localeCompare(b['工号']);
+                    return a['备注 (工程师工号)'].localeCompare(b['备注 (工程师工号)']);
                 });
                 
-                // 7. 将 JSON 数据转换为工作表并添加到工作簿
+                // 7. 添加总计行
+                let totalWorkers = 0;
+                let totalWorkTypeCounts = {};
+                sheetData.forEach(row => {
+                    if (typeof row['总人数 (去重)'] === 'number') {
+                         totalWorkers += row['总人数 (去重)'];
+                    }
+                    allTypes.forEach(type => {
+                        const count = row[type] && row[type] !== '-' ? row[type] : 0;
+                        totalWorkTypeCounts[type] = (totalWorkTypeCounts[type] || 0) + count;
+                    });
+                });
+                
+                const totalRow = {
+                    '日期': '总计:',
+                    '用工地点': '',
+                    '总人数 (去重)': totalWorkers,
+                };
+                allTypes.forEach(type => {
+                    totalRow[type] = totalWorkTypeCounts[type] > 0 ? totalWorkTypeCounts[type] : '-';
+                });
+                totalRow['备注 (工程师工号)'] = ''; // 清空备注
+                
+                sheetData.push(totalRow);
+
+
+                // 8. 将 JSON 数据转换为工作表并添加到工作簿
                 const ws = XLSX.utils.json_to_sheet(sheetData);
                 
-                // 清理工作表名称中的非法字符
                 const safeLocationName = location.replace(/[\\/?*\[\]]/g, '_').substring(0, 31);
                 XLSX.utils.book_append_sheet(wb, ws, safeLocationName);
             }
 
-            // 8. 导出文件
-            XLSX.writeFile(wb, `用工地点分表明细_${monthInput}.xlsx`);
+            // 9. 导出文件
+            XLSX.writeFile(wb, `用工地点分表汇总_${monthInput}.xlsx`);
         }
     </script>
 </body>
