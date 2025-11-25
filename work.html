@@ -185,15 +185,34 @@
         
         .employee-list {
             margin-top: 20px;
+            /* 限制高度，使其可滚动 */
+            max-height: 500px; 
+            overflow-y: auto;
+            padding-right: 5px; /* 防止滚动条遮挡内容 */
         }
-        
+
+        /* 搜索和筛选容器样式 */
+        .filter-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .filter-controls input, .filter-controls select {
+            padding: 8px;
+            font-size: 14px;
+        }
+
         .employee-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
             padding: 15px;
             border-bottom: 1px solid #eee;
-            margin-bottom: 10px; /* 增加行间距 */
+            margin-bottom: 10px; 
             border-radius: 5px;
             transition: background-color 0.2s;
         }
@@ -633,6 +652,16 @@
                                 <div class="stat-value" id="workingEmployees">0</div>
                             </div>
                         </div>
+                        
+                        <div class="filter-controls">
+                            <input type="text" id="employeeSearch" placeholder="搜索姓名/工号...">
+                            <select id="employeeRoleFilter">
+                                <option value="all">所有人员</option>
+                                <option value="worker">仅工人</option>
+                                <option value="engineer">仅工程师</option>
+                            </select>
+                        </div>
+
                         <div class="employee-list" id="employeeList">
                             </div>
                     </div>
@@ -1499,6 +1528,10 @@
         // **新增历史记录查询 DOM 元素**
         const historyDateInput = document.getElementById('historyDate');
         const queryHistoryBtn = document.getElementById('queryHistoryBtn');
+        
+        // **新增搜索/筛选 DOM 元素**
+        const employeeSearchInput = document.getElementById('employeeSearch');
+        const employeeRoleFilterSelect = document.getElementById('employeeRoleFilter');
 
         // **新增：根据 ID 获取人员姓名 (工人或工程师)**
         function getPersonnelName(id) {
@@ -1645,6 +1678,10 @@
                     workHistoryList.innerHTML = '<div class="empty-state">请选择员工查看工作记录</div>';
                 }
             });
+            
+            // **新增：搜索和筛选事件监听**
+            employeeSearchInput.addEventListener('input', renderEmployeeList);
+            employeeRoleFilterSelect.addEventListener('change', renderEmployeeList);
             
             // 云端同步按钮事件
             syncToCloudBtn.addEventListener('click', () => cloudSync.uploadAllData());
@@ -1799,7 +1836,7 @@
                     displayWorkType = workType;
                     
                     // 格式化操作文本
-                    action = action.replace(/\[地点: .*\]/, '');
+                    action = action.replace(/\[地点: .*\]/, '').trim();
                     
                 } else if (action.includes('扫码下工') || action.includes('手动暂停工作')) {
                     // 如果是下工，使用上一次的上工地点/工种
@@ -1807,7 +1844,7 @@
                     displayWorkType = currentWorkSession.workType || '（上工工种缺失）';
                     
                     // 格式化操作文本
-                    action = action.replace(/ - 工作时长: .*$/, '');
+                    action = action.replace(/ - 工作时长: .*$/, '').trim();
 
                     // 清空当前工作会话
                     currentWorkSession = {};
@@ -2083,12 +2120,33 @@
             });
         }
         
-        // 渲染员工列表 (已增强，包含工程师列表和二维码按钮)
+        // 渲染员工列表 (已增强，包含搜索和筛选逻辑)
         function renderEmployeeList() {
             employeeList.innerHTML = '';
             
-            // 组合工人列表
-            const workerListHtml = employees.map(employee => {
+            const searchText = employeeSearchInput.value.toLowerCase().trim();
+            const roleFilter = employeeRoleFilterSelect.value;
+            
+            // 1. 过滤工人
+            const filteredWorkers = employees.filter(employee => {
+                if (roleFilter !== 'all' && roleFilter !== 'worker') return false;
+                
+                const matchesSearch = employee.name.toLowerCase().includes(searchText) || 
+                                    employee.id.toLowerCase().includes(searchText);
+                return matchesSearch;
+            });
+            
+            // 2. 过滤工程师
+            const filteredEngineers = engineers.filter(engineer => {
+                if (roleFilter !== 'all' && roleFilter !== 'engineer') return false;
+                
+                const matchesSearch = engineer.name.toLowerCase().includes(searchText) || 
+                                    engineer.id.toLowerCase().includes(searchText);
+                return matchesSearch;
+            });
+            
+            // 3. 渲染工人列表
+            const workerListHtml = filteredWorkers.map(employee => {
                 const isWorking = workRecords[employee.id] && workRecords[employee.id].isWorking;
                 const statusClass = isWorking ? 'status-working' : 'status-idle';
                 const statusText = isWorking ? '工作中' : '未工作';
@@ -2118,8 +2176,8 @@
                 `;
             }).join('');
 
-            // 组合工程师列表
-            const engineerListHtml = engineers.map(engineer => {
+            // 4. 渲染工程师列表
+            const engineerListHtml = filteredEngineers.map(engineer => {
                 return `
                     <div class="employee-item" data-role="engineer" data-id="${engineer.id}">
                         <div class="employee-info">
@@ -2134,16 +2192,16 @@
                 `;
             }).join('');
 
-            // 组合列表
-            if (employees.length === 0 && engineers.length === 0) {
-                employeeList.innerHTML = '<div class="empty-state">暂无人员信息</div>';
+            // 5. 组合列表
+            if (filteredWorkers.length === 0 && filteredEngineers.length === 0) {
+                employeeList.innerHTML = '<div class="empty-state">没有找到匹配的人员。</div>';
             } else {
                  // 重新渲染整个列表
-                 employeeList.innerHTML = workerListHtml + (engineers.length > 0 ? 
+                 employeeList.innerHTML = workerListHtml + (filteredEngineers.length > 0 ? 
                     `<h3 style="margin-top: 20px; padding-bottom: 10px; border-bottom: 1px solid #ddd; color: #2c3e50;">工程师/扫描者</h3>` + engineerListHtml : '');
             }
             
-            // 更新统计
+            // 6. 更新统计
             totalEmployeesSpan.textContent = employees.length + engineers.length;
             const workingCount = employees.filter(emp => 
                 workRecords[emp.id] && workRecords[emp.id].isWorking
@@ -2475,13 +2533,14 @@
             }
             
             modalQrContainer.innerHTML = '';
-            modalQrPlaceholder.style.display = 'none';
+            qrPlaceholder.style.display = 'none';
             modalQrLink.textContent = `链接: ${qrDataUrl}`;
             
             // 检查 canvas 元素是否存在并是 Canvas
-            if (modalQrContainer.getContext) {
+            const canvasElement = document.getElementById('modalQrcode');
+            if (canvasElement && canvasElement.getContext) {
                  // 使用原生的 canvas 元素
-                 QRCode.toCanvas(modalQrContainer, qrDataUrl, {
+                 QRCode.toCanvas(canvasElement, qrDataUrl, {
                     width: 200,
                     margin: 1,
                     color: {
@@ -2498,11 +2557,11 @@
                     }
                 });
             } else {
-                 // 如果不是 Canvas 元素，可能被之前的渲染覆盖了，重新创建
-                 const canvas = document.createElement('canvas');
-                 canvas.id = 'modalQrcode';
+                 // 确保 canvas 元素存在
+                 const newCanvas = document.createElement('canvas');
+                 newCanvas.id = 'modalQrcode';
                  document.getElementById('modalQrContainer').innerHTML = '';
-                 document.getElementById('modalQrContainer').appendChild(canvas);
+                 document.getElementById('modalQrContainer').appendChild(newCanvas);
                  showQRCodeModal(id, role); // 重新调用
                  return;
             }
