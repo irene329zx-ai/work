@@ -172,7 +172,33 @@ function initializeSupabase() {
     return supabaseInstance;
 }
 
-// NOTE: 备用方案函数 fallbackToRestAPI 已被移除
+// 【新增函数】云端验证工程师身份
+async function verifyScannerIdentity(scannerId) {
+    const supabase = initializeSupabase();
+    
+    showDebug('loadingDebug', `云端验证工程师ID: ${scannerId}`);
+    
+    try {
+        const { data, error } = await supabase
+            .from('scanners')
+            .select('id')
+            .eq('id', scannerId)
+            .maybeSingle();
+
+        if (error) {
+            console.error('云端验证失败:', error);
+            // 视为验证失败，返回 false
+            return false;
+        }
+
+        // 如果 data 不为空，说明在后台找到了该工程师
+        return !!data; 
+
+    } catch (e) {
+        console.error('执行云端验证时发生异常:', e);
+        return false;
+    }
+}
 
 // 显示成功页面
 function showSuccess(name, id, location, workType, action = '') {
@@ -327,8 +353,6 @@ function retry() {
     init();
 }
 
-// NOTE: useFallback() 函数已移除
-
 // 【新增函数】获取工人最近的上工记录（用于下工时显示地点和工种）
 async function getLastWorkDetails(employeeId) {
     const supabase = initializeSupabase();
@@ -365,7 +389,7 @@ async function getLastWorkDetails(employeeId) {
 }
 
 
-// 主初始化函数 (已修改：新增状态检测逻辑)
+// 主初始化函数 (已修改：新增云端身份校验)
 async function init() {
     const params = getUrlParams();
     showDebug('loadingDebug', `员工: ${params.name} (${params.id})`);
@@ -375,19 +399,33 @@ async function init() {
         return;
     }
 
-    // 强制检查工程师身份
+    // 强制检查工程师身份 (本地检查)
     const currentScannerId = getScannerIdFromLocal();
     if (!currentScannerId) {
         showError('⚠️ 考勤前请先认证身份！', '请**先扫描您的工程师身份码**进行身份确认，然后再扫描工人二维码。');
-        return;
+        return; 
     }
-    showDebug('loadingDebug', `已认证工程师ID: ${currentScannerId}`);
+    showDebug('loadingDebug', `已认证本地工程师ID: ${currentScannerId}`);
 
     try {
         showDebug('loadingDebug', '正在加载Supabase库...');
         await loadSupabase();
         const supabase = initializeSupabase();
-        showDebug('loadingDebug', 'Supabase加载完成，检测工人当前状态...');
+        
+        // 【关键新增步骤】：云端验证工程师身份是否存在
+        const isScannerValid = await verifyScannerIdentity(currentScannerId);
+        
+        if (!isScannerValid) {
+            // 如果云端不存在，则清空本地存储，并报错
+            localStorage.removeItem('active_scanner_id');
+            showError(
+                '❌ 身份认证失败', 
+                `工号 ${currentScannerId} 在后台已被移除或无效。请重新扫描一个有效的工程师身份码。`
+            );
+            return;
+        }
+        
+        showDebug('loadingDebug', '云端身份验证成功，检测工人当前状态...');
 
         // 1. 获取员工当前的工作状态
         const { data: currentRecord, error: fetchError } = await supabase
