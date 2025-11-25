@@ -118,7 +118,7 @@
             color: #2c3e50;
         }
         
-        input[type="text"], select, input[type="month"] {
+        input[type="text"], select, input[type="month"], input[type="date"] {
             width: 100%;
             padding: 12px;
             border: 1px solid #ddd;
@@ -127,7 +127,7 @@
             transition: border 0.3s;
         }
         
-        input[type="text"]:focus, select:focus, input[type="month"]:focus {
+        input[type="text"]:focus, select:focus, input[type="month"]:focus, input[type="date"]:focus {
             border-color: #3498db;
             outline: none;
         }
@@ -462,7 +462,7 @@
         }
 
         /* ------------------------------------- */
-        /* 新增：员工列表优化和模态窗口 (Modal) 样式 */
+        /* 员工列表优化和模态窗口 (Modal) 样式 */
         /* ------------------------------------- */
         
         /* 模态窗口 (Modal) 样式 */
@@ -546,6 +546,30 @@
         
         .employee-item[data-role="engineer"] .employee-name::before {
              content: '👨‍💻'; /* 工程师图标 */
+        }
+
+        /* 历史记录表格样式 */
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .history-table th, .history-table td {
+            padding: 10px 8px;
+            border: 1px solid #eee;
+            font-size: 13px;
+            text-align: left;
+            vertical-align: top;
+        }
+        .history-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        .history-detail {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 5px;
         }
     </style>
 </head>
@@ -644,6 +668,13 @@
                         
                         <div class="total-hours">
                             今日总工时: <span id="totalHours">0</span> 小时
+                        </div>
+                        
+                        <h3 style="margin-top: 20px; color: #2c3e50;">详细记录查询</h3>
+                        <div class="form-group" style="margin-top: 10px;">
+                            <label for="historyDate">选择日期</label>
+                            <input type="date" id="historyDate" style="width: 60%; display: inline-block;">
+                            <button id="queryHistoryBtn" style="width: 38%; padding: 12px 0;">查询</button>
                         </div>
                         
                         <div class="work-history" id="workHistory">
@@ -1160,6 +1191,7 @@
                         .select('*');
 
                     if (!error && scanners) {
+                        // 确保全局 engineers 变量被更新，供 getPersonnelName 使用
                         window.engineers = scanners.map(scan => ({
                             name: scan.name,
                             id: scan.id
@@ -1180,7 +1212,7 @@
                 try {
                     const localEmployees = JSON.parse(localStorage.getItem('employees')) || [];
                     
-                    // 确保上传的数据结构只包含 'id' and 'name'
+                    // 确保上传的数据结构只包含 'id' 和 'name'
                     const employeesToUpload = localEmployees.map(emp => ({
                         id: emp.id,
                         name: emp.name,
@@ -1463,6 +1495,10 @@
         const payrollMonthInput = document.getElementById('payrollMonth');
         const calculatePayrollBtn = document.getElementById('calculatePayroll');
         const payrollResultsContainer = document.getElementById('payrollResults');
+        
+        // **新增历史记录查询 DOM 元素**
+        const historyDateInput = document.getElementById('historyDate');
+        const queryHistoryBtn = document.getElementById('queryHistoryBtn');
 
         // **新增：根据 ID 获取人员姓名 (工人或工程师)**
         function getPersonnelName(id) {
@@ -1475,6 +1511,13 @@
             if (engineer) return engineer.name;
             return id; // 找不到姓名就返回工号
         }
+        
+        // **新增：获取工程师姓名或返回工号 (专用于显示)**
+        function getScannerNameOrId(id) {
+            const engineer = engineers.find(eng => eng.id === id);
+            if (engineer) return `${engineer.name} (${id})`;
+            return id;
+        }
 
         // 时间格式化函数
         function formatDateTime(timestamp) {
@@ -1484,6 +1527,18 @@
                 year: 'numeric',
                 month: '2-digit',
                 day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+        }
+        
+        // 仅格式化时间 (HH:MM:SS)
+        function formatOnlyTime(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString('zh-CN', {
                 hour: '2-digit',
                 minute: '2-digit',
                 second: '2-digit',
@@ -1528,6 +1583,9 @@
 
         // 初始化
         document.addEventListener('DOMContentLoaded', async function() {
+            // 设置查询日期的默认值
+            historyDateInput.value = getTodayDateString();
+
             // 初始化云同步
             await cloudSync.checkConnection();
             
@@ -1563,12 +1621,26 @@
             if (calculatePayrollBtn) {
                 calculatePayrollBtn.addEventListener('click', calculatePayroll);
             }
+            
+            // **新增：历史记录查询按钮事件**
+            queryHistoryBtn.addEventListener('click', function() {
+                const employeeId = selectedEmployeeSelect.value;
+                const date = historyDateInput.value;
+                if (employeeId && date) {
+                    showWorkHistoryByDay(employeeId, date);
+                } else {
+                    showNotification('请选择工人和查询日期', 'error');
+                }
+            });
 
             // 员工选择变化事件
             selectedEmployeeSelect.addEventListener('change', function() {
                 currentEmployeeId = this.value;
                 if (currentEmployeeId) {
-                    renderWorkHistory(currentEmployeeId);
+                    // 默认显示今日记录
+                    const today = getTodayDateString();
+                    historyDateInput.value = today;
+                    showWorkHistoryByDay(currentEmployeeId, today);
                 } else {
                     workHistoryList.innerHTML = '<div class="empty-state">请选择员工查看工作记录</div>';
                 }
@@ -1645,6 +1717,122 @@
             // 添加系统日志
             addSystemLog('系统初始化完成');
         });
+
+        // **新增：查询并显示指定日期的详细工作记录**
+        async function showWorkHistoryByDay(employeeId, dateString) {
+            workHistoryList.innerHTML = '<div class="empty-state">正在加载记录...</div>';
+            
+            if (!workRecords[employeeId] || !workRecords[employeeId].history) {
+                workHistoryList.innerHTML = '<div class="empty-state">该员工暂无工时记录。</div>';
+                return;
+            }
+            
+            const selectedDate = new Date(dateString);
+            const history = workRecords[employeeId].history;
+
+            // 1. 过滤出指定日期的上下工操作
+            const dailyHistory = history.filter(item => {
+                const itemDate = new Date(item.timestamp);
+                return itemDate.toDateString() === selectedDate.toDateString();
+            }).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)); // 按时间排序
+
+            if (dailyHistory.length === 0) {
+                workHistoryList.innerHTML = `<div class="empty-state">在 ${dateString} 这一天没有找到工时操作记录。</div>`;
+                return;
+            }
+            
+            // 2. 解析和整合数据
+            let tableHTML = `
+                <h4 style="margin-bottom: 10px;">${dateString} 详细工作日志</h4>
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>操作/时长</th>
+                            <th>地点/工种</th>
+                            <th>登记人</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            let currentWorkSession = {}; // 临时存储上工信息
+
+            dailyHistory.forEach(item => {
+                const timeString = formatOnlyTime(new Date(item.timestamp));
+                let action = item.action;
+                let location = 'N/A';
+                let workType = 'N/A';
+                let scannerId = 'N/A';
+                let duration = '';
+
+                // 提取扫描者工号 (存在于 '由 XXX 扫描' 中)
+                const scannerMatch = action.match(/\(由 (.*?) 扫描\)/);
+                if (scannerMatch && scannerMatch[1]) {
+                    scannerId = scannerMatch[1].trim();
+                }
+
+                // 提取地点和工种 (存在于 '上工' 记录中)
+                const locationMatch = action.match(/\[地点: (.*?), 工种: (.*?)\]/);
+                if (locationMatch && locationMatch[1]) {
+                    location = locationMatch[1].trim();
+                    workType = locationMatch[2].replace(/\]$/, '').trim();
+                }
+                
+                // 提取时长 (存在于 '下工' 或 '暂停' 记录中)
+                const durationMatch = action.match(/工作时长: (\d+\.?\d*)小时/);
+                if (durationMatch && durationMatch[1]) {
+                    duration = `${parseFloat(durationMatch[1]).toFixed(2)} 小时`;
+                }
+
+                // **优化 1：使用工程师姓名**
+                const scannerName = getScannerNameOrId(scannerId);
+                
+                // 优化 2：整合显示
+                let displayLocation = 'N/A';
+                let displayWorkType = 'N/A';
+                
+                if (action.includes('扫码上工') || action.includes('手动开始工作')) {
+                    // 如果是上工，记录地点/工种，并显示当前登记信息
+                    currentWorkSession = { location, workType };
+                    displayLocation = location;
+                    displayWorkType = workType;
+                    
+                    // 格式化操作文本
+                    action = action.replace(/\[地点: .*\]/, '');
+                    
+                } else if (action.includes('扫码下工') || action.includes('手动暂停工作')) {
+                    // 如果是下工，使用上一次的上工地点/工种
+                    displayLocation = currentWorkSession.location || '（上工地点缺失）';
+                    displayWorkType = currentWorkSession.workType || '（上工工种缺失）';
+                    
+                    // 格式化操作文本
+                    action = action.replace(/ - 工作时长: .*$/, '');
+
+                    // 清空当前工作会话
+                    currentWorkSession = {};
+                }
+                
+                // 移除历史记录中的冗余扫描者信息，单独显示
+                action = action.replace(/\(由 .*? 扫描\)/, '').trim();
+
+                tableHTML += `
+                    <tr>
+                        <td>${timeString}</td>
+                        <td><strong>${action}</strong> ${duration}</td>
+                        <td>地点: ${displayLocation}<div class="history-detail">工种: ${displayWorkType}</div></td>
+                        <td>${scannerName}</td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += `
+                    </tbody>
+                </table>
+            `;
+
+            workHistoryList.innerHTML = tableHTML;
+        }
 
         // **新增：计算月工时并渲染报表**
         async function calculatePayroll() {
@@ -2148,8 +2336,8 @@
             // 添加系统日志
             addSystemLog(`工人 ${employee.name} 手动开始工作`);
             
-            // 更新工作历史显示
-            renderWorkHistory(employeeId);
+            // 更新工作历史显示 (默认显示今日)
+            showWorkHistoryByDay(employeeId, getTodayDateString());
             
             // 同步到云端
             cloudSync.uploadAllData();
@@ -2205,8 +2393,8 @@
             // 添加系统日志
             addSystemLog(`工人 ${employee.name} 手动暂停工作`);
             
-            // 更新工作历史显示
-            renderWorkHistory(employeeId);
+            // 更新工作历史显示 (默认显示今日)
+            showWorkHistoryByDay(employeeId, getTodayDateString());
             
             // 同步到云端
             cloudSync.uploadAllData();
@@ -2257,37 +2445,82 @@
                 timestamp: new Date().toISOString()
             });
             
-            // 更新工作历史显示
-            renderWorkHistory(employeeId);
+            // 默认显示今日记录
+            if (employeeId === currentEmployeeId) {
+                showWorkHistoryByDay(employeeId, getTodayDateString());
+            }
         }
         
-        // 渲染工作历史
-        function renderWorkHistory(employeeId) {
-            workHistoryList.innerHTML = '';
+        // **新增：显示二维码模态窗口**
+        function showQRCodeModal(id, role) {
+            const modal = document.getElementById('qrModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalQrContainer = document.getElementById('modalQrcode');
+            const modalQrPlaceholder = document.getElementById('modalQrPlaceholder');
+            const modalQrLink = document.getElementById('modalQrLink');
             
-            if (!workRecords[employeeId] || !workRecords[employeeId].history || workRecords[employeeId].history.length === 0) {
-                workHistoryList.innerHTML = '<div class="empty-state">暂无工作记录</div>';
-                return;
+            const employee = employees.find(e => e.id === id);
+            const engineer = engineers.find(e => e.id === id);
+            const name = (employee || engineer)?.name || 'N/A';
+            
+            let qrDataUrl = '';
+            const path = `https://irene329zx-ai.github.io/work`;
+
+            if (role === 'worker') {
+                modalTitle.textContent = `工人考勤码: ${name} (${id})`;
+                qrDataUrl = `${path}/scan-success.html?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}`;
+            } else if (role === 'engineer') {
+                modalTitle.textContent = `工程师身份码: ${name} (${id})`;
+                qrDataUrl = `${path}/scanner-session.html?id=${encodeURIComponent(id)}`;
             }
             
-            const history = workRecords[employeeId].history.slice(-5); // 只显示最近5条记录
+            modalQrContainer.innerHTML = '';
+            modalQrPlaceholder.style.display = 'none';
+            modalQrLink.textContent = `链接: ${qrDataUrl}`;
             
-            history.forEach(item => {
-                const historyItem = document.createElement('div');
-                historyItem.className = 'history-item';
-                
-                const date = new Date(item.timestamp);
-                const timeString = formatDateTime(date.getTime());
-                
-                historyItem.innerHTML = `
-                    <div class="history-date">${item.action}</div>
-                    <div class="history-time">${timeString}</div>
-                `;
-                
-                workHistoryList.appendChild(historyItem);
-            });
+            // 检查 canvas 元素是否存在并是 Canvas
+            if (modalQrContainer.getContext) {
+                 // 使用原生的 canvas 元素
+                 QRCode.toCanvas(modalQrContainer, qrDataUrl, {
+                    width: 200,
+                    margin: 1,
+                    color: {
+                        dark: '#000000',
+                        light: '#FFFFFF'
+                    }
+                }, function(error) {
+                    if (error) {
+                        console.error(error);
+                        modalQrPlaceholder.style.display = 'block';
+                        modalQrPlaceholder.textContent = '生成二维码失败';
+                    } else {
+                        modal.style.display = 'block';
+                    }
+                });
+            } else {
+                 // 如果不是 Canvas 元素，可能被之前的渲染覆盖了，重新创建
+                 const canvas = document.createElement('canvas');
+                 canvas.id = 'modalQrcode';
+                 document.getElementById('modalQrContainer').innerHTML = '';
+                 document.getElementById('modalQrContainer').appendChild(canvas);
+                 showQRCodeModal(id, role); // 重新调用
+                 return;
+            }
         }
         
+        // **新增：关闭模态窗口**
+        function closeModal() {
+            document.getElementById('qrModal').style.display = 'none';
+        }
+
+        // 点击模态窗口外部关闭
+        window.onclick = function(event) {
+            const modal = document.getElementById('qrModal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        }
+
         // 更新总工时显示
         function updateTotalHours() {
             let total = 0;
@@ -2379,78 +2612,6 @@
             }, 3000);
         }
 
-        // ==================== 二维码模态窗口功能 ====================
-
-        // **新增：显示二维码模态窗口**
-        function showQRCodeModal(id, role) {
-            const modal = document.getElementById('qrModal');
-            const modalTitle = document.getElementById('modalTitle');
-            const modalQrContainer = document.getElementById('modalQrcode');
-            const modalQrPlaceholder = document.getElementById('modalQrPlaceholder');
-            const modalQrLink = document.getElementById('modalQrLink');
-            
-            const employee = employees.find(e => e.id === id);
-            const engineer = engineers.find(e => e.id === id);
-            const name = (employee || engineer)?.name || 'N/A';
-            
-            let qrDataUrl = '';
-            const path = `https://irene329zx-ai.github.io/work`;
-
-            if (role === 'worker') {
-                modalTitle.textContent = `工人考勤码: ${name} (${id})`;
-                qrDataUrl = `${path}/scan-success.html?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}`;
-            } else if (role === 'engineer') {
-                modalTitle.textContent = `工程师身份码: ${name} (${id})`;
-                qrDataUrl = `${path}/scanner-session.html?id=${encodeURIComponent(id)}`;
-            }
-            
-            modalQrContainer.innerHTML = '';
-            modalQrPlaceholder.style.display = 'none';
-            modalQrLink.textContent = `链接: ${qrDataUrl}`;
-            
-            // 检查 canvas 元素是否存在并是 Canvas
-            if (modalQrContainer.getContext) {
-                 // 使用原生的 canvas 元素
-                 QRCode.toCanvas(modalQrContainer, qrDataUrl, {
-                    width: 200,
-                    margin: 1,
-                    color: {
-                        dark: '#000000',
-                        light: '#FFFFFF'
-                    }
-                }, function(error) {
-                    if (error) {
-                        console.error(error);
-                        modalQrPlaceholder.style.display = 'block';
-                        modalQrPlaceholder.textContent = '生成二维码失败';
-                    } else {
-                        modal.style.display = 'block';
-                    }
-                });
-            } else {
-                 // 如果不是 Canvas 元素，可能被之前的渲染覆盖了，重新创建
-                 const canvas = document.createElement('canvas');
-                 canvas.id = 'modalQrcode';
-                 document.getElementById('modalQrContainer').innerHTML = '';
-                 document.getElementById('modalQrContainer').appendChild(canvas);
-                 showQRCodeModal(id, role); // 重新调用
-                 return;
-            }
-        }
-        
-        // **新增：关闭模态窗口**
-        function closeModal() {
-            document.getElementById('qrModal').style.display = 'none';
-        }
-
-        // 点击模态窗口外部关闭
-        window.onclick = function(event) {
-            const modal = document.getElementById('qrModal');
-            if (event.target === modal) {
-                closeModal();
-            }
-        }
-
         // ==================== 微信扫码相关功能 ====================
 
         // 加载微信扫码记录
@@ -2489,11 +2650,12 @@
                 
                 // 使用新函数获取工人和工程师的姓名
                 const workerName = getPersonnelName(scan.employee_id); 
-                const scannerName = getPersonnelName(scan.scanner_id); 
+                // **优化点 1：显示工程师姓名**
+                const scannerFullName = getScannerNameOrId(scan.scanner_id); 
                 const scanTime = new Date(scan.scan_time).toLocaleString('zh-CN');
                 
                 // 显示扫描者信息
-                const scannerInfo = scan.scanner_id ? ` (扫描者: ${scannerName})` : '';
+                const scannerInfo = scan.scanner_id ? ` (扫描者: ${scannerFullName})` : '';
                 const locationInfo = scan.work_location || 'N/A';
                 const workTypeInfo = scan.work_type || 'N/A';
 
