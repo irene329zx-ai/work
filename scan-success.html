@@ -124,9 +124,6 @@ function getUrlParams() {
 // **关键修改：使用 localStorage 读取并清除扫描者ID**
 function getScannerIdFromLocal() {
     const scannerId = localStorage.getItem('active_scanner_id');
-    
-    // 原始代码：无论是否读取到，都尝试清除，防止身份信息长期保留
-    // // 为了安全和避免身份残留，这里只读取，不在考勤成功之前主动清除
     return scannerId;
 }
 
@@ -176,8 +173,6 @@ async function fallbackToRestAPI(employeeId, employeeName) {
         });
 
         if (response.ok) {
-            // **成功时清除扫描者身份 (原始代码，现已注释/移除)**
-            // localStorage.removeItem('active_scanner_id'); // <--- 移除此行
             showDebug('errorDebug', '备用方案成功！数据已记录。');
             showSuccess(employeeName, employeeId, globalLocation, globalWorkType, '（通过备用方案）');
             return true;
@@ -211,18 +206,12 @@ function showSuccess(name, id, location, workType, action = '') {
         document.getElementById('successTime').textContent = `时间: ${new Date().toLocaleString('zh-CN')}`;
     }
     
-    document.getElementById('closeInfo').textContent = '本页面将自动关闭';
-    
-    // **成功时清除扫描者身份 (原始代码，现已注释/移除)**
-    // localStorage.removeItem('active_scanner_id'); // <--- 移除此行
-
     // 提示：由于身份信息不会被清除，工程师可以继续扫码
-    document.getElementById('closeInfo').textContent = '身份已保留。请直接返回继续扫描下一位工人。'; 
+    document.getElementById('closeInfo').textContent = '身份已保留。请手动退出此页面，扫描下一位工人。'; 
     
-    // 延迟关闭，但现在我们希望保留身份，所以可能不自动关闭
+    // 延迟，但现在我们希望保留身份，所以可能不自动关闭
     setTimeout(() => {
         try { 
-            // window.close(); // 不再自动关闭，让工程师手动退出
             document.getElementById('closeInfo').textContent = '身份已保留。请手动退出此页面，扫描下一位工人。';
         } 
         catch (e) { 
@@ -231,13 +220,34 @@ function showSuccess(name, id, location, workType, action = '') {
     }, 3000);
 }
 
+// 【关键修改点 2：修改 showError 函数，支持详细消息】
 // 显示错误页面
-function showError(message) {
+function showError(title, message) {
     document.getElementById('loadingState').style.display = 'none';
-    document.getElementById('inputState').style.display = 'none'; // 隐藏输入状态
+    document.getElementById('inputState').style.display = 'none'; 
     document.getElementById('successState').style.display = 'none';
     document.getElementById('errorState').style.display = 'block';
-    document.getElementById('errorMessage').textContent = message;
+    
+    const errorContainer = document.getElementById('errorState').querySelector('div');
+    
+    // 如果传入了两个参数，则第一个是标题，第二个是详细信息
+    if (message) {
+         document.getElementById('errorMessage').innerHTML = `<strong>${title}</strong><br><br>${message}`;
+    } else {
+         document.getElementById('errorMessage').textContent = title;
+    }
+
+    // 身份认证失败时，不提供重试和备用方案按钮
+    if (title.includes('认证身份')) {
+        errorContainer.innerHTML = 
+            '<p style="margin-top: 15px; font-weight: bold; color: #7f8c8d;">完成认证后请重新扫描工人二维码。</p>';
+    } else {
+        errorContainer.innerHTML = 
+            `<div>
+                <button onclick="retry()">重试</button>
+                <button class="retry-btn" onclick="useFallback()">使用备用方案</button>
+            </div>`;
+    }
 }
 
 // 【新增】展示输入界面
@@ -275,7 +285,7 @@ function showInputState(name, id) {
         if (workStatusResult && workStatusResult.action) {
             showSuccess(params.name, params.id, globalLocation, globalWorkType, workStatusResult.action);
         } else {
-            showError('考勤记录失败，请使用备用方案');
+            showError('考勤记录失败', '请使用备用方案或检查网络连接。');
         }
     };
 }
@@ -314,17 +324,20 @@ async function init() {
     const params = getUrlParams();
     showDebug('loadingDebug', `员工: ${params.name} (${params.id})`);
     
-    // 【新增检查】如果没有 scannerId，则提示并要求先认证
+    if (!params.id) {
+        showError('无效的二维码', '缺少员工信息，请检查二维码链接。');
+        return;
+    }
+
+    // 【关键修改点 1：强制检查工程师身份】
     const currentScannerId = getScannerIdFromLocal();
     if (!currentScannerId) {
-        showError('请先使用您的工程师身份码进行身份认证！');
-        return;
+        // 如果没有扫描者ID，则显示错误信息并阻止后续操作
+        showError('⚠️ 考勤前请先认证身份！', '请**先扫描您的工程师身份码**进行身份确认，然后再扫描工人二维码。');
+        return; // 强制退出
     }
-    
-    if (!params.id) {
-        showError('无效的二维码：缺少员工信息');
-        return;
-    }
+    showDebug('loadingDebug', `已认证工程师ID: ${currentScannerId}`); // 显示认证信息
+    // 【关键修改点 1 结束】
 
     try {
         showDebug('loadingDebug', '正在加载Supabase库...');
@@ -340,7 +353,7 @@ async function init() {
     } catch (error) {
         console.error('初始化失败:', error);
         showDebug('errorDebug', '错误详情: ' + error.message);
-        showError('系统加载失败，请使用备用方案');
+        showError('系统加载失败', '请使用备用方案或联系管理员。');
     }
 }
 
