@@ -127,7 +127,6 @@
             <p id="errorMessage">系统错误</p>
             <div>
                 <button onclick="retry()">重试</button>
-                <button class="retry-btn" onclick="useFallback()">使用备用方案</button>
             </div>
             <div class="debug" id="errorDebug"></div>
         </div>
@@ -173,50 +172,7 @@ function initializeSupabase() {
     return supabaseInstance;
 }
 
-// 备用方案：使用Fetch API直接调用Supabase REST API
-async function fallbackToRestAPI(employeeId, employeeName, location, workType) {
-    showDebug('errorDebug', '尝试备用方案...');
-    
-    const scannerId = getScannerIdFromLocal(); 
-    showDebug('errorDebug', `扫描者ID: ${scannerId || '未识别'}`);
-    
-    const scanData = {
-        employee_id: employeeId,
-        user_agent: navigator.userAgent,
-        scan_time: new Date().toISOString(),
-        work_location: location, 
-        work_type: workType, 
-    };
-    
-    if (scannerId) {
-        scanData.scanner_id = scannerId;
-    }
-
-    try {
-        const response = await fetch('https://ynkmlbczkcporjdpawbr.supabase.co/rest/v1/wechat_scans', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY',
-                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY',
-                'Prefer': 'return=minimal'
-            },
-            body: JSON.stringify(scanData)
-        });
-
-        if (response.ok) {
-            showDebug('errorDebug', '备用方案成功！数据已记录。');
-            showSuccess(employeeName, employeeId, location, workType, '（通过备用方案）');
-            return true;
-        } else {
-            const errorText = await response.text();
-            throw new Error(`HTTP response.status: ${response.status} ${errorText}`);
-        }
-    } catch (error) {
-        showDebug('errorDebug', '备用方案失败: ' + error.message);
-        return false;
-    }
-}
+// NOTE: 备用方案函数 fallbackToRestAPI 已被移除
 
 // 显示成功页面
 function showSuccess(name, id, location, workType, action = '') {
@@ -269,10 +225,10 @@ function showError(title, message) {
         errorContainer.innerHTML = 
             '<p style="margin-top: 15px; font-weight: bold; color: #7f8c8d;">完成认证后请重新扫描工人二维码。</p>';
     } else {
+        // 仅显示重试按钮
         errorContainer.innerHTML = 
             `<div>
                 <button onclick="retry()">重试</button>
-                <button class="retry-btn" onclick="useFallback()">使用备用方案</button>
             </div>`;
     }
 }
@@ -309,7 +265,8 @@ function showStopWorkState(name, id, location, workType) {
         if (workStatusResult && workStatusResult.action) {
             showSuccess(params.name, params.id, globalLocation, globalWorkType, workStatusResult.action);
         } else {
-            showError('考勤记录失败', '请使用备用方案或检查网络连接。');
+            // 移除备用方案的提示
+            showError('考勤记录失败', '请检查网络连接后重试。');
         }
     };
 }
@@ -350,7 +307,8 @@ function showInputState(name, id) {
         if (workStatusResult && workStatusResult.action) {
             showSuccess(params.name, params.id, globalLocation, globalWorkType, workStatusResult.action);
         } else {
-            showError('考勤记录失败', '请使用备用方案或检查网络连接。');
+            // 移除备用方案的提示
+            showError('考勤记录失败', '请检查网络连接后重试。');
         }
     };
 }
@@ -369,20 +327,7 @@ function retry() {
     init();
 }
 
-// 使用备用方案 (使用当前已有的全局 location/workType)
-function useFallback() {
-    const params = getUrlParams();
-    
-    // 如果全局变量为空，强制要求输入
-    if (!globalLocation || !globalWorkType) {
-        alert('请先填写用工地点和工种后再使用备用方案！');
-        document.getElementById('errorState').style.display = 'none';
-        showInputState(params.name, params.id);
-        return;
-    }
-    
-    fallbackToRestAPI(params.id, params.name, globalLocation, globalWorkType);
-}
+// NOTE: useFallback() 函数已移除
 
 // 【新增函数】获取工人最近的上工记录（用于下工时显示地点和工种）
 async function getLastWorkDetails(employeeId) {
