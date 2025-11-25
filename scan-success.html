@@ -394,7 +394,7 @@ async function recordAttendance(employeeId, employeeName) {
         
         showDebug('loadingDebug', '1. 插入扫码记录...');
         
-        // 构建记录对象
+        // 构建记录对象 - 每次扫码都需要记录地点和工种，用于报表去重
         const scanRecord = { 
             employee_id: employeeId,
             user_agent: navigator.userAgent,
@@ -411,7 +411,7 @@ async function recordAttendance(employeeId, employeeName) {
         // 1. 插入扫码记录
         const { data: scanData, error: scanError } = await supabase
             .from('wechat_scans')
-            .insert([scanRecord]) // 使用包含 scanner_id 和新增字段的记录对象
+            .insert([scanRecord])
             .select();
 
         if (scanError) {
@@ -424,12 +424,10 @@ async function recordAttendance(employeeId, employeeName) {
         showDebug('loadingDebug', '2. 更新工作状态...');
         
         // 2. 更新工作状态（这是关键！）
-        // 将 scannerId 传递给 updateWorkStatus
         const workStatusResult = await updateWorkStatus(supabase, employeeId, employeeName, scannerId, globalLocation, globalWorkType); 
         
         if (workStatusResult.success) {
             showDebug('successDebug', `工作状态更新成功: ${workStatusResult.action}`);
-            // 返回 workStatusResult 而不是 true，以便 showSuccess 拿到 action
             return workStatusResult; 
         } else {
             showDebug('errorDebug', '工作状态更新失败: ' + workStatusResult.error);
@@ -442,7 +440,7 @@ async function recordAttendance(employeeId, employeeName) {
     }
 }
 
-// 更新工作状态 - 核心逻辑 (已更新，在历史记录中加入地点和工种信息)
+// 更新工作状态 - 核心逻辑 (优化：下工时历史记录不重复记录地点工种)
 async function updateWorkStatus(supabase, employeeId, employeeName, scannerId, location, workType) { 
     try {
         showDebug('loadingDebug', '获取当前工作状态...');
@@ -465,7 +463,8 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId, l
         
         // 用于添加到历史记录的文本信息
         const scannerInfo = scannerId ? ` (由 ${scannerId} 扫描)` : '';
-        const locationInfo = location ? ` [地点: ${location}, 工种: ${workType}]` : '';
+        // 关键改动：locationInfo 只在上工时使用
+        let locationInfo = ''; 
 
         // currentRecord 为 null 表示新员工或记录不存在
         if (currentRecord && currentRecord.is_working) {
@@ -475,21 +474,17 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId, l
             
             // 【解决精度问题】计算本次工作时长
             const startTime = new Date(currentRecord.start_time).getTime(); // 获取毫秒时间戳
-            // 确保本次工作时长至少为 100 毫秒，防止网络延迟导致负值或 0
             const rawDurationMs = Math.max(100, new Date().getTime() - startTime); 
             const workTimeHours = rawDurationMs / (1000 * 60 * 60);
 
-            // 统一精度到小数点后四位
             const fixedWorkTimeHours = parseFloat(workTimeHours.toFixed(4)); 
             const newTotalHours = (parseFloat(currentRecord.total_hours) || 0) + fixedWorkTimeHours;
             
             // 处理今日工时
             let newTodayHours = parseFloat(currentRecord.today_hours) || 0;
             if (currentRecord.start_time && new Date().toDateString() === new Date(currentRecord.start_time).toDateString()) {
-                // 如果上工和下工都在同一天，累加今日工时
                 newTodayHours += fixedWorkTimeHours;
             } else {
-                // 如果跨天，仍然累加本次工作时长，让 work.html 处理每日重置和实时计算
                 newTodayHours += fixedWorkTimeHours;
             }
             
@@ -499,13 +494,13 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId, l
                 is_working: false,
                 start_time: null,
                 total_hours: newTotalHours,
-                today_hours: newTodayHours, // 写入累加后的今日工时
+                today_hours: newTodayHours,
                 last_updated: now,
                 history: [
                     ...(currentRecord.history || []),
                     {
-                        // **关键：** 在 action 中添加扫描者信息、地点和工种
-                        action: `微信扫码下工${scannerInfo}${locationInfo} - 工作时长: ${fixedWorkTimeHours.toFixed(2)}小时`, 
+                        // 历史记录中只记录下工动作和时长，不再记录地点/工种
+                        action: `微信扫码下工${scannerInfo} - 工作时长: ${fixedWorkTimeHours.toFixed(2)}小时`, 
                         timestamp: now
                     }
                 ]
@@ -516,11 +511,13 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId, l
             showDebug('loadingDebug', '员工未工作/新员工，执行上工操作...');
             action = '上工';
             
+            // 只有上工时才构造并记录地点/工种信息
+            locationInfo = location ? ` [地点: ${location}, 工种: ${workType}]` : ''; 
+
             // 判断是否需要重置今日工时
             let currentTodayHours = currentRecord ? parseFloat(currentRecord.today_hours) : 0;
             if (currentRecord && currentRecord.last_updated) {
                 const lastUpdateDate = new Date(currentRecord.last_updated);
-                // 如果上次更新不是今天（即跨天了），重置今日工时
                 if (new Date().toDateString() !== lastUpdateDate.toDateString()) {
                     currentTodayHours = 0; 
                 }
@@ -532,7 +529,7 @@ async function updateWorkStatus(supabase, employeeId, employeeName, scannerId, l
                 is_working: true,
                 start_time: now,
                 total_hours: currentRecord ? parseFloat(currentRecord.total_hours) : 0,
-                today_hours: currentTodayHours, // 使用重置后的今日工时
+                today_hours: currentTodayHours, 
                 last_updated: now,
                 history: [
                     ...(currentRecord?.history || []),
