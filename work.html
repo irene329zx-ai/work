@@ -759,10 +759,32 @@
                             }
                         });
 
+                    // 【新增】订阅 scanners 表的变化
+                    const scannersSubscription = this.supabase
+                        .channel('scanners-changes')
+                        .on(
+                            'postgres_changes',
+                            {
+                                event: '*',
+                                schema: 'public',
+                                table: 'scanners'
+                            },
+                            (payload) => {
+                                console.log('scanners 发生变化:', payload);
+                                this.handleScannersChange(payload); // 新增处理器
+                            }
+                        )
+                        .subscribe((status) => {
+                            if (status === 'SUBSCRIBED') {
+                                console.log('实时订阅 scanners 已开启');
+                            }
+                        });
+
                     this.realtimeSubscriptions = [
                         workRecordsSubscription,
                         employeesSubscription,
-                        wechatScansSubscription
+                        wechatScansSubscription,
+                        scannersSubscription
                     ];
 
                     this.isRealtimeEnabled = true;
@@ -919,6 +941,40 @@
                     });
                 }
             }
+            
+            // 【新增】处理 scanners 变化
+            handleScannersChange(payload) {
+                const { eventType, new: newScanner, old: oldScanner } = payload;
+                
+                switch (eventType) {
+                    case 'INSERT':
+                    case 'UPDATE':
+                        if (newScanner) {
+                            const index = engineers.findIndex(eng => eng.id === newScanner.id);
+                            if (index >= 0) {
+                                engineers[index] = { name: newScanner.name, id: newScanner.id };
+                            } else {
+                                engineers.push({ name: newScanner.name, id: newScanner.id });
+                            }
+                            localStorage.setItem('engineers', JSON.stringify(engineers));
+                            renderEmployeeList();
+                            updateStats();
+                            showNotification(`工程师 ${newScanner.name} 信息已从云端更新`, 'success');
+                            addSystemLog(`云端同步: 工程师 ${newScanner.name} 信息更新`);
+                        }
+                        break;
+                        
+                    case 'DELETE':
+                        if (oldScanner) {
+                            engineers = engineers.filter(eng => eng.id !== oldScanner.id);
+                            localStorage.setItem('engineers', JSON.stringify(engineers));
+                            renderEmployeeList();
+                            updateStats();
+                            showNotification(`工程师 ${oldScanner.id} 已从云端删除`, 'success');
+                        }
+                        break;
+                }
+            }
 
             // 同步所有数据
             async syncAllData() {
@@ -928,17 +984,24 @@
                 }
 
                 try {
-                    // 从云端下载员工数据
+                    // 从云端下载员工数据 (工人)
                     const { data: employees, error: empError } = await this.supabase
                         .from('employees')
                         .select('*');
                     
-                    if (!empError && employees && employees.length > 0) {
+                    if (!empError && employees && employees.length >= 0) {
                         localStorage.setItem('employees', JSON.stringify(employees));
                     }
+                    
+                    // 【新增】从云端下载扫描者数据 (工程师)
+                    await this.syncScannersFromCloud(); 
 
                     // 从云端下载工时记录
                     await this.syncWorkRecordsFromCloud();
+                    
+                    // 重新加载本地数据（覆盖全局变量）
+                    window.employees = JSON.parse(localStorage.getItem('employees')) || [];
+                    window.engineers = JSON.parse(localStorage.getItem('engineers')) || [];
 
                     showNotification('数据同步完成', 'success');
                     addSystemLog('从云端同步所有数据');
@@ -980,8 +1043,29 @@
                     return false;
                 }
             }
+            
+            // 【新增】从云端同步扫描者记录
+            async syncScannersFromCloud() {
+                try {
+                    const { data: scanners, error } = await this.supabase
+                        .from('scanners')
+                        .select('*');
 
-            // 上传员工数据
+                    if (!error && scanners) {
+                        window.engineers = scanners.map(scan => ({
+                            name: scan.name,
+                            id: scan.id
+                        }));
+                        localStorage.setItem('engineers', JSON.stringify(window.engineers));
+                        return true;
+                    }
+                } catch (error) {
+                    console.error('从云端同步扫描者记录失败:', error);
+                    return false;
+                }
+            }
+
+            // 上传员工数据 (工人)
             async uploadEmployees() {
                 if (!this.isOnline) return false;
 
@@ -1035,6 +1119,33 @@
                     return false;
                 }
             }
+            
+            // 【新增】上传扫描者数据 (工程师)
+            async uploadScanners() {
+                if (!this.isOnline) return false;
+
+                try {
+                    const engineers = JSON.parse(localStorage.getItem('engineers')) || [];
+                    
+                    const scannersToUpload = engineers.map(eng => ({
+                        id: eng.id,
+                        name: eng.name,
+                        last_updated: new Date().toISOString()
+                    }));
+
+                    if (scannersToUpload.length > 0) {
+                        const { error } = await this.supabase
+                            .from('scanners')
+                            .upsert(scannersToUpload, { onConflict: 'id' });
+                        
+                        if (error) throw error;
+                    }
+                    return true;
+                } catch (error) {
+                    console.error('上传扫描者数据失败:', error);
+                    return false;
+                }
+            }
 
             // 上传所有数据
             async uploadAllData() {
@@ -1046,6 +1157,7 @@
                 try {
                     await this.uploadEmployees();
                     await this.uploadWorkRecords();
+                    await this.uploadScanners(); // 【新增】上传工程师数据
                     console.log('所有数据已上传到云端');
                     showNotification('数据已同步到云端', 'success');
                     addSystemLog('上传所有数据到云端');
@@ -1057,8 +1169,8 @@
                 }
             }
 
-            // 删除员工（云端）
-            async deleteEmployee(employeeId) {
+            // 删除工人（云端）
+            async deleteWorker(employeeId) {
                 if (!this.isOnline) return false;
 
                 try {
@@ -1080,7 +1192,26 @@
 
                     return true;
                 } catch (error) {
-                    console.error('删除员工失败:', error);
+                    console.error('删除工人失败:', error);
+                    return false;
+                }
+            }
+
+            // 【新增】删除扫描者（云端）
+            async deleteScanner(scannerId) {
+                if (!this.isOnline) return false;
+
+                try {
+                    const { error: scanError } = await this.supabase
+                        .from('scanners')
+                        .delete()
+                        .eq('id', scannerId);
+                    
+                    if (scanError) throw scanError;
+
+                    return true;
+                } catch (error) {
+                    console.error('删除工程师失败:', error);
                     return false;
                 }
             }
@@ -1568,7 +1699,8 @@
                     renderEmployeeList();
                     updateEmployeeSelect();
                     updateStats();
-                    // 同步到云端 (仅同步工人数据)
+                    
+                    // 【修改】统一同步逻辑：无论是工人还是工程师，都上传所有数据
                     cloudSync.uploadAllData();
                 }
             });
@@ -1756,11 +1888,11 @@
             if (confirm('确定要删除该工人吗？此操作将同时删除工时记录，不可恢复。')) {
                 const employee = employees.find(emp => emp.id === employeeId);
                 
-                // 从员工列表中移除
+                // 从员工列表中移除 (本地)
                 employees = employees.filter(emp => emp.id !== employeeId);
                 localStorage.setItem('employees', JSON.stringify(employees));
                 
-                // 从工时记录中移除
+                // 从工时记录中移除 (本地)
                 if (workRecords[employeeId]) {
                     delete workRecords[employeeId];
                     localStorage.setItem('workRecords', JSON.stringify(workRecords));
@@ -1781,8 +1913,8 @@
                 showNotification('工人已删除', 'success');
                 addSystemLog(`删除工人: ${employee.name} (${employeeId})`);
                 
-                // 从云端删除
-                cloudSync.deleteEmployee(employeeId);
+                // 从云端删除 (调用新的方法)
+                cloudSync.deleteWorker(employeeId);
             }
         }
         
@@ -1791,7 +1923,7 @@
             if (confirm('确定要删除该工程师/扫描者吗？')) {
                 const engineer = engineers.find(eng => eng.id === engineerId);
                 
-                // 从工程师列表中移除
+                // 从工程师列表中移除 (本地)
                 engineers = engineers.filter(eng => eng.id !== engineerId);
                 localStorage.setItem('engineers', JSON.stringify(engineers));
                 
@@ -1801,6 +1933,9 @@
                 
                 showNotification('工程师已删除', 'success');
                 addSystemLog(`删除工程师: ${engineer.name} (${engineerId})`);
+                
+                // 从云端删除 (调用新的方法)
+                cloudSync.deleteScanner(engineerId);
             }
         }
 
