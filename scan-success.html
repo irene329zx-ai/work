@@ -125,11 +125,8 @@ function getUrlParams() {
 function getScannerIdFromLocal() {
     const scannerId = localStorage.getItem('active_scanner_id');
     
-    // **重要：** 无论是否读取到，都尝试清除，防止身份信息长期保留
-    if (scannerId) { 
-        // 考勤成功后不会立即清除，保留到记录考勤时一起清除，以防失败重试
-        // 为了安全和避免身份残留，这里只读取，不在考勤成功之前主动清除
-    }
+    // 原始代码：无论是否读取到，都尝试清除，防止身份信息长期保留
+    // // 为了安全和避免身份残留，这里只读取，不在考勤成功之前主动清除
     return scannerId;
 }
 
@@ -179,8 +176,8 @@ async function fallbackToRestAPI(employeeId, employeeName) {
         });
 
         if (response.ok) {
-            // **成功时清除扫描者身份**
-            localStorage.removeItem('active_scanner_id'); 
+            // **成功时清除扫描者身份 (原始代码，现已注释/移除)**
+            // localStorage.removeItem('active_scanner_id'); // <--- 移除此行
             showDebug('errorDebug', '备用方案成功！数据已记录。');
             showSuccess(employeeName, employeeId, globalLocation, globalWorkType, '（通过备用方案）');
             return true;
@@ -216,13 +213,20 @@ function showSuccess(name, id, location, workType, action = '') {
     
     document.getElementById('closeInfo').textContent = '本页面将自动关闭';
     
-    // **成功时清除扫描者身份**
-    localStorage.removeItem('active_scanner_id'); 
+    // **成功时清除扫描者身份 (原始代码，现已注释/移除)**
+    // localStorage.removeItem('active_scanner_id'); // <--- 移除此行
 
+    // 提示：由于身份信息不会被清除，工程师可以继续扫码
+    document.getElementById('closeInfo').textContent = '身份已保留。请直接返回继续扫描下一位工人。'; 
+    
+    // 延迟关闭，但现在我们希望保留身份，所以可能不自动关闭
     setTimeout(() => {
-        try { window.close(); } 
+        try { 
+            // window.close(); // 不再自动关闭，让工程师手动退出
+            document.getElementById('closeInfo').textContent = '身份已保留。请手动退出此页面，扫描下一位工人。';
+        } 
         catch (e) { 
-            document.getElementById('closeInfo').textContent = '请手动关闭此页面';
+            document.getElementById('closeInfo').textContent = '身份已保留。请手动退出此页面，扫描下一位工人。';
         }
     }, 3000);
 }
@@ -309,6 +313,13 @@ function useFallback() {
 async function init() {
     const params = getUrlParams();
     showDebug('loadingDebug', `员工: ${params.name} (${params.id})`);
+    
+    // 【新增检查】如果没有 scannerId，则提示并要求先认证
+    const currentScannerId = getScannerIdFromLocal();
+    if (!currentScannerId) {
+        showError('请先使用您的工程师身份码进行身份认证！');
+        return;
+    }
     
     if (!params.id) {
         showError('无效的二维码：缺少员工信息');
