@@ -109,18 +109,25 @@
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
         
         let supabase = null; 
-        let cachedScans = []; // 缓存当前查询月的所有扫码记录，用于导出
+        let cachedScans = [];      // 缓存当前查询月的所有扫码记录，用于导出
+        let employeeNameMap = {}; // 存储员工ID到姓名的映射 {id: name}
 
         document.addEventListener('DOMContentLoaded', function() {
             try {
                 if (window.supabase) {
                     supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+                    
                     // 设置默认日期为本月
                     const today = new Date();
                     const year = today.getFullYear();
                     const month = String(today.getMonth() + 1).padStart(2, '0');
                     document.getElementById('reportMonthInput').value = `${year}-${month}`;
-                    fetchAndDisplayReport(); // 首次加载数据
+                    
+                    // 预加载员工和工程师姓名，用于导出时查找
+                    fetchPersonnelNames().then(map => {
+                        employeeNameMap = map;
+                        fetchAndDisplayReport();
+                    });
                 } else {
                     document.getElementById('reportContainer').innerHTML = '<div class="empty-state error">错误: Supabase SDK 未加载。请检查网络。</div>';
                 }
@@ -128,33 +135,49 @@
                  document.getElementById('reportContainer').innerHTML = '<div class="empty-state error">初始化错误: ' + e.message + '</div>';
             }
         });
+        
+        // 辅助函数：从云端获取所有员工和工程师的姓名映射
+        async function fetchPersonnelNames() {
+            const nameMap = {};
+            try {
+                // 1. 获取工人姓名
+                const { data: employees, error: empError } = await supabase.from('employees').select('id, name');
+                if (!empError && employees) {
+                    employees.forEach(emp => nameMap[emp.id] = emp.name);
+                }
 
-        // 辅助函数：将 ISO 时间戳格式化为本地日期
+                // 2. 获取工程师/扫描者姓名
+                const { data: scanners, error: scanError } = await supabase.from('scanners').select('id, name');
+                if (!scanError && scanners) {
+                    scanners.forEach(scan => nameMap[scan.id] = scan.name);
+                }
+
+            } catch (e) {
+                console.error("获取人员姓名失败:", e);
+            }
+            return nameMap;
+        }
+
+        // 辅助函数：将 ISO 时间戳格式化为本地日期 (MM/DD)
         function formatLocalDay(isoString) {
             const date = new Date(isoString);
-            return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+            return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }).replace(/\//g, '/');
         }
         
-        // 辅助函数：将 ISO 时间戳格式化为本地时间
+        // 辅助函数：将 ISO 时间戳格式化为本地时间 (HH:MM:SS)
         function formatLocalTime(isoString) {
             const date = new Date(isoString);
-            return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+            return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
         }
 
         // ===============================================
         // 核心功能 1: 查询和显示报表 (按月汇总工种人数)
         // ===============================================
         async function fetchAndDisplayReport() {
-            if (!supabase) {
-                document.getElementById('reportContainer').innerHTML = '<div class="empty-state">正在初始化连接，请稍候再试...</div>';
-                return;
-            }
+            if (!supabase) return;
             
             const monthInput = document.getElementById('reportMonthInput').value;
-            if (!monthInput) {
-                alert('请选择查询月份');
-                return;
-            }
+            if (!monthInput) return;
             
             document.getElementById('reportContainer').innerHTML = '<div class="empty-state">正在查询数据...</div>';
 
@@ -169,7 +192,7 @@
                 // 1. 查询选定月份的扫码记录
                 const { data: scans, error } = await supabase
                     .from('wechat_scans')
-                    .select('employee_id, work_location, work_type, scan_time')
+                    .select('employee_id, work_location, work_type, scan_time, scanner_id') // 确保获取 scanner_id
                     .gte('scan_time', startOfMonth) 
                     .lt('scan_time', endOfMonth);   
 
@@ -177,7 +200,7 @@
                     throw new Error(error.message);
                 }
                 
-                cachedScans = scans || []; // 缓存结果用于导出
+                cachedScans = scans || []; 
                 
                 // 2. 数据聚合 (按地点+工种分类统计人数)
                 const locationReport = aggregateDataForDisplay(cachedScans);
@@ -237,7 +260,7 @@
             const sortedWorkTypes = Array.from(allWorkTypes).sort();
 
             let tableHTML = `
-                <h3 style="margin-bottom: 15px;">${monthInput} 用工统计</h3>
+                <h3 style="margin-bottom: 15px;">${monthInput} 用工统计 (月汇总)</h3>
                 <div class="report-table-wrapper">
                 <table style="width: 100%; border-collapse: collapse; text-align: left;">
                     <thead>
@@ -292,7 +315,7 @@
         }
         
         // ===============================================
-        // 核心功能 2: 导出 Excel (用工明细)
+        // 核心功能 2: 导出 Excel (按地点分表，明细报表)
         // ===============================================
 
         async function exportMonthlyReport() {
@@ -300,39 +323,79 @@
                 alert('当前月份没有用工记录可供导出。请先查询。');
                 return;
             }
-
-            const monthInput = document.getElementById('reportMonthInput').value;
             
-            // 1. 准备导出数据
-            const exportData = cachedScans.map(scan => {
-                return {
-                    '日期': formatLocalDay(scan.scan_time),
-                    '时间': formatLocalTime(scan.scan_time),
-                    '工号': scan.employee_id,
-                    '用工地点': scan.work_location || 'N/A',
-                    '工种': scan.work_type || 'N/A',
-                    '操作类型': getActionType(scan), // 扫码记录通常只代表一个事件，需要判断上工/下工
-                    '扫描者工号': scan.scanner_id || 'N/A'
-                };
+            // 1. 按地点分组，并聚合每个地点的数据
+            const groupedByLocation = {};
+            cachedScans.forEach(scan => {
+                const loc = scan.work_location || 'N/A';
+                if (!groupedByLocation[loc]) {
+                    groupedByLocation[loc] = [];
+                }
+                groupedByLocation[loc].push(scan);
             });
             
-            // 辅助函数：根据扫码时间判断操作类型（简易判断，需结合 work_records 才能准确判断是上工还是下工）
-            // 由于这里只有原始扫码记录，我们统一标记为 "考勤记录"
-            function getActionType(scan) {
-                // 实际在 scan-success.html 中，每一次扫码都会触发上工或下工
-                // 由于我们无法直接在 wechat_scans 表判断，这里提供一个提示
-                return '考勤记录 (上工或下工)'; 
-            }
-            
-            // 2. 将 JSON 数据转换为工作表
-            const ws = XLSX.utils.json_to_sheet(exportData);
-
-            // 3. 创建工作簿
+            // 2. 准备工作簿
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "用工地点考勤明细");
+            const monthInput = document.getElementById('reportMonthInput').value;
+            
+            for (const [location, scans] of Object.entries(groupedByLocation)) {
+                
+                // 3. 聚合员工的当日记录：同一天同一地点，只保留一条上工记录，并合并所有扫描者 ID
+                const dailyAggregatedData = {}; // Key: 'employeeId-day'
+                
+                scans.forEach(scan => {
+                    const day = formatLocalDay(scan.scan_time);
+                    const key = `${scan.employee_id}-${day}`;
+                    
+                    const newRecord = {
+                        '日期': day,
+                        '工号': scan.employee_id,
+                        '姓名': employeeNameMap[scan.employee_id] || 'N/A', // 查找姓名
+                        '工种': scan.work_type || 'N/A',
+                        '备注 (工程师工号)': scan.scanner_id || 'N/A' // 初始备注
+                    };
+                    
+                    if (!dailyAggregatedData[key]) {
+                        // 首次记录：直接使用
+                        dailyAggregatedData[key] = newRecord;
+                    } else {
+                        // 重复记录：合并工程师 ID
+                        const existingRemark = dailyAggregatedData[key]['备注 (工程师工号)'];
+                        if (scan.scanner_id && !existingRemark.includes(scan.scanner_id)) {
+                             // 如果新的备注不包含现有 ID，则追加
+                             dailyAggregatedData[key]['备注 (工程师工号)'] = existingRemark + `, ${scan.scanner_id}`;
+                        }
+                        
+                        // 为了简化，我们只保留第一个扫码记录（通常是上工），忽略下工记录的日期/时间细节。
+                        // 如果需要更精细的时间管理，则需要连接 work_records 表。
+                    }
+                });
+                
+                // 4. 将聚合后的数据转换为工作表数组
+                const sheetData = Object.values(dailyAggregatedData);
 
-            // 4. 导出文件
-            XLSX.writeFile(wb, `用工地点考勤明细_${monthInput}.xlsx`);
+                // 5. 排序：按日期和工号排序
+                sheetData.sort((a, b) => {
+                    if (a['日期'] !== b['日期']) {
+                        return a['日期'].localeCompare(b['日期']);
+                    }
+                    return a['工号'].localeCompare(b['工号']);
+                });
+                
+                // 6. 添加汇总行 (可选，Excel 中更常见的是手动汇总)
+                // sheetData.push({ '日期': '汇总:', '工号': '', '姓名': '', '工种': '', '备注 (工程师工号)': '' });
+
+
+                // 7. 将 JSON 数据转换为工作表并添加到工作簿
+                const ws = XLSX.utils.json_to_sheet(sheetData);
+                
+                // 清理工作表名称中的非法字符
+                const safeLocationName = location.replace(/[\\/?*\[\]]/g, '_').substring(0, 31);
+                XLSX.utils.book_append_sheet(wb, ws, safeLocationName);
+            }
+
+            // 8. 导出文件
+            XLSX.writeFile(wb, `用工地点分表明细_${monthInput}.xlsx`);
         }
     </script>
 </body>
