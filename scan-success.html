@@ -62,7 +62,9 @@
             border-radius: 8px;
             margin: 20px 0;
             border: 1px solid #f39c12;
+            text-align: left;
         }
+        .stop-work-prompt p { margin: 5px 0; }
     </style>
 </head>
 <body>
@@ -220,7 +222,7 @@ async function fallbackToRestAPI(employeeId, employeeName, location, workType) {
 function showSuccess(name, id, location, workType, action = '') {
     document.getElementById('loadingState').style.display = 'none';
     document.getElementById('inputState').style.display = 'none'; 
-    document.getElementById('stopWorkState').style.display = 'none'; // 新增：隐藏下工确认状态
+    document.getElementById('stopWorkState').style.display = 'none';
     document.getElementById('errorState').style.display = 'none';
     document.getElementById('successState').style.display = 'block';
     
@@ -251,7 +253,7 @@ function showSuccess(name, id, location, workType, action = '') {
 function showError(title, message) {
     document.getElementById('loadingState').style.display = 'none';
     document.getElementById('inputState').style.display = 'none'; 
-    document.getElementById('stopWorkState').style.display = 'none'; // 新增：隐藏下工确认状态
+    document.getElementById('stopWorkState').style.display = 'none';
     document.getElementById('successState').style.display = 'none';
     document.getElementById('errorState').style.display = 'block';
     
@@ -275,7 +277,7 @@ function showError(title, message) {
     }
 }
 
-// 【新增】展示下工确认界面
+// 展示下工确认界面
 function showStopWorkState(name, id, location, workType) {
     document.getElementById('loadingState').style.display = 'none';
     document.getElementById('inputState').style.display = 'none';
@@ -312,10 +314,10 @@ function showStopWorkState(name, id, location, workType) {
     };
 }
 
-// 【新增】展示输入界面 (仅用于上工)
+// 展示输入界面 (仅用于上工)
 function showInputState(name, id) {
     document.getElementById('loadingState').style.display = 'none';
-    document.getElementById('stopWorkState').style.display = 'none'; // 新增：隐藏下工确认状态
+    document.getElementById('stopWorkState').style.display = 'none';
     document.getElementById('errorState').style.display = 'none';
     document.getElementById('successState').style.display = 'none';
     
@@ -354,16 +356,15 @@ function showInputState(name, id) {
 }
 
 
-// 重试函数 (回到输入状态)
+// 重试函数 (回到 init 重新检测状态)
 function retry() {
-    const params = getUrlParams();
     document.getElementById('errorState').style.display = 'none';
     
-    // 如果是网络错误，我们重新进行状态检测
     // 重置全局变量
     globalLocation = '';
     globalWorkType = '';
-    
+    document.getElementById('errorDebug').innerHTML = '';
+
     // 重新启动流程
     init();
 }
@@ -450,6 +451,7 @@ async function init() {
             .eq('employee_id', params.id)
             .maybeSingle();
             
+        // 如果有网络错误或 Supabase 错误，抛出异常，让 catch 块处理
         if (fetchError && fetchError.code !== 'PGRST116') {
              throw new Error("查询状态失败: " + fetchError.message);
         }
@@ -484,6 +486,7 @@ async function init() {
 // 动态加载Supabase
 function loadSupabase() {
     return new Promise((resolve, reject) => {
+        // 检查是否已加载
         if (window.supabase) {
             resolve();
             return;
@@ -492,6 +495,7 @@ function loadSupabase() {
         const script = document.createElement('script');
         script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
         script.onload = () => {
+            // 给点时间让库初始化
             setTimeout(resolve, 100);
         };
         script.onerror = () => reject(new Error('Failed to load Supabase'));
