@@ -1066,23 +1066,35 @@
                 }
             }
 
-            // 上传员工数据 (工人)
+            // **强化上传方法 1: 上传员工数据 (工人)**
             async uploadEmployees() {
                 if (!this.isOnline) return false;
 
                 try {
-                    const employees = JSON.parse(localStorage.getItem('employees')) || [];
+                    const localEmployees = JSON.parse(localStorage.getItem('employees')) || [];
                     
-                    if (employees.length > 0) {
-                        const { error } = await this.supabase
+                    // 确保上传的数据结构只包含 'id' 和 'name'
+                    const employeesToUpload = localEmployees.map(emp => ({
+                        id: emp.id,
+                        name: emp.name,
+                    }));
+
+                    if (employeesToUpload.length > 0) {
+                        // 使用 upsert 确保新员工被插入，旧员工被更新
+                        const { data, error } = await this.supabase
                             .from('employees')
-                            .upsert(employees, { onConflict: 'id' });
+                            .upsert(employeesToUpload, { onConflict: 'id' })
+                            .select(); 
                         
-                        if (error) throw error;
+                        if (error) {
+                            console.error('上传员工数据失败详情:', error);
+                            throw error;
+                        }
                     }
                     return true;
                 } catch (error) {
                     console.error('上传员工数据失败:', error);
+                    showNotification(`上传工人数据失败: ${error.message || '未知错误'}`, 'error');
                     return false;
                 }
             }
@@ -1121,29 +1133,35 @@
                 }
             }
             
-            // 【新增】上传扫描者数据 (工程师)
+            // **强化上传方法 2: 上传扫描者数据 (工程师)**
             async uploadScanners() {
                 if (!this.isOnline) return false;
 
                 try {
-                    const engineers = JSON.parse(localStorage.getItem('engineers')) || [];
+                    const localEngineers = JSON.parse(localStorage.getItem('engineers')) || [];
                     
-                    const scannersToUpload = engineers.map(eng => ({
+                    // 确保上传的数据结构只包含 'id' 和 'name'
+                    const scannersToUpload = localEngineers.map(eng => ({
                         id: eng.id,
                         name: eng.name,
                         last_updated: new Date().toISOString()
                     }));
 
                     if (scannersToUpload.length > 0) {
-                        const { error } = await this.supabase
+                        const { data, error } = await this.supabase
                             .from('scanners')
-                            .upsert(scannersToUpload, { onConflict: 'id' });
+                            .upsert(scannersToUpload, { onConflict: 'id' })
+                            .select(); 
                         
-                        if (error) throw error;
+                        if (error) {
+                            console.error('上传工程师数据失败详情:', error);
+                            throw error;
+                        }
                     }
                     return true;
                 } catch (error) {
                     console.error('上传扫描者数据失败:', error);
+                    showNotification(`上传工程师数据失败: ${error.message || '未知错误'}`, 'error');
                     return false;
                 }
             }
@@ -1156,9 +1174,17 @@
                 }
 
                 try {
-                    await this.uploadEmployees();
+                    // 确保员工和工程师数据优先上传完成
+                    const empSuccess = await this.uploadEmployees();
+                    const scanSuccess = await this.uploadScanners();
+                    
+                    if (!empSuccess || !scanSuccess) {
+                        throw new Error('部分人员信息上传失败');
+                    }
+                    
+                    // 再上传工时记录
                     await this.uploadWorkRecords();
-                    await this.uploadScanners(); // 【新增】上传工程师数据
+                    
                     console.log('所有数据已上传到云端');
                     showNotification('数据已同步到云端', 'success');
                     addSystemLog('上传所有数据到云端');
@@ -1701,8 +1727,8 @@
                     updateEmployeeSelect();
                     updateStats();
                     
-                    // 【修改】统一同步逻辑：无论是工人还是工程师，都上传所有数据
-                    cloudSync.uploadAllData();
+                    // 【关键修复】确保立即上传，以便后续考勤能找到员工ID
+                    cloudSync.uploadAllData(); 
                 }
             });
         }
