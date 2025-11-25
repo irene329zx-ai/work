@@ -2,29 +2,27 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>用工地点统计报表</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <style>
+    <style> 
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-        
         body {
             background-color: #f5f7fa;
             color: #333;
             line-height: 1.6;
             padding: 20px;
         }
-        
         .container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
         }
-        
         header {
             text-align: center;
             margin-bottom: 30px;
@@ -34,61 +32,10 @@
             border-radius: 10px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
-        
         h1 {
             font-size: 2.5rem;
             margin-bottom: 10px;
         }
-        
-        .subtitle {
-            font-size: 1.2rem;
-            opacity: 0.9;
-        }
-        
-        .tab-container {
-            display: flex;
-            margin-bottom: 20px;
-            background: white;
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        
-        .tab {
-            flex: 1;
-            padding: 15px;
-            text-align: center;
-            background: #f8f9fa;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-        
-        .tab.active {
-            background: #3498db;
-            color: white;
-        }
-        
-        .tab-content {
-            display: none;
-        }
-        
-        .tab-content.active {
-            display: block;
-        }
-        
-        .main-content {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-        }
-        
-        @media (max-width: 900px) {
-            .main-content {
-                grid-template-columns: 1fr;
-            }
-        }
-        
         .card {
             background: white;
             border-radius: 10px;
@@ -96,366 +43,37 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             margin-bottom: 20px;
         }
-        
-        .card h2 {
-            color: #2c3e50;
-            margin-bottom: 20px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #f0f0f0;
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #2c3e50;
-        }
-        
-        input[type="text"], select, input[type="month"] {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
-            transition: border 0.3s;
-        }
-        
-        input[type="text"]:focus, select:focus, input[type="month"]:focus {
-            border-color: #3498db;
-            outline: none;
-        }
-        
-        button {
-            background-color: #3498db;
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 600;
-            transition: background-color 0.3s;
-            margin-right: 10px;
-            margin-bottom: 10px;
-        }
-        
-        button:hover {
-            background-color: #2980b9;
-        }
-        
-        button.secondary {
-            background-color: #2ecc71;
-        }
-        
-        button.secondary:hover {
-            background-color: #27ae60;
-        }
-        
-        button.danger {
-            background-color: #e74c3c;
-        }
-        
-        button.danger:hover {
-            background-color: #c0392b;
-        }
-        
-        .qr-container {
-            text-align: center;
-            margin-top: 20px;
-            padding: 15px;
-            border: 1px dashed #ddd;
-            border-radius: 5px;
-            min-height: 200px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-        }
-        
-        #qrcode {
-            margin-top: 15px;
-        }
-        
-        .employee-list {
-            margin-top: 20px;
-        }
-        
-        .employee-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 15px;
-            border-bottom: 1px solid #eee;
-        }
-        
-        .employee-item:last-child {
-            border-bottom: none;
-        }
-        
-        .employee-info {
-            flex-grow: 1;
-        }
-        
-        .employee-name {
-            font-weight: 600;
-            font-size: 18px;
-        }
-        
-        .employee-id {
-            color: #7f8c8d;
-            font-size: 14px;
-        }
-        
-        .employee-status {
-            padding: 5px 10px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-        
-        .status-working {
-            background-color: #e8f6f3;
-            color: #27ae60;
-        }
-        
-        .status-idle {
-            background-color: #fef9e7;
-            color: #f39c12;
-        }
-
-        /* 工程师状态用 status-online/status-online */
-        .status-online {
-            background-color: #f0f0f8;
-            color: #3498db;
-        }
-        
-        .work-time {
-            font-size: 14px;
-            color: #2c3e50;
-            margin-top: 5px;
-        }
-        
-        .logs-container {
-            margin-top: 20px;
-            max-height: 300px;
-            overflow-y: auto;
-        }
-        
-        .log-item {
-            padding: 10px 15px;
-            border-bottom: 1px solid #eee;
-            font-size: 14px;
-        }
-        
-        .log-time {
-            color: #7f8c8d;
-            font-size: 12px;
-        }
-        
-        .notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 15px 25px;
-            border-radius: 5px;
-            color: white;
-            font-weight: 600;
-            z-index: 1000;
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-        
-        .notification.success {
-            background-color: #2ecc71;
-        }
-        
-        .notification.error {
-            background-color: #e74c3c;
-        }
-        
-        .notification.show {
-            opacity: 1;
-        }
-        
-        .action-buttons {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        
-        .total-hours {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #f8f9fa;
-            border-radius: 5px;
-            text-align: center;
-            font-size: 18px;
-            font-weight: 600;
-            color: #2c3e50;
-        }
-        
-        .employee-actions {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-        
-        .delete-btn {
-            background-color: #e74c3c;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        
-        .delete-btn:hover {
-            background-color: #c0392b;
-        }
-        
         .empty-state {
             text-align: center;
             padding: 30px;
             color: #7f8c8d;
         }
-        
-        .stats-container {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-top: 20px;
-        }
-        
-        .stat-card {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            text-align: center;
-        }
-        
-        .stat-value {
-            font-size: 24px;
-            font-weight: bold;
-            color: #3498db;
-            margin: 10px 0;
-        }
-        
-        .stat-label {
-            font-size: 14px;
-            color: #7f8c8d;
-        }
-        
-        .work-history {
-            margin-top: 20px;
-        }
-        
-        .history-item {
-            padding: 10px 15px;
-            border-bottom: 1px solid #eee;
-            font-size: 14px;
-        }
-        
-        .history-date {
-            font-weight: 600;
-            color: #2c3e50;
-        }
-        
-        .history-time {
-            color: #7f8c8d;
-            font-size: 12px;
-        }
-        
-        .history-duration {
-            float: right;
-            font-weight: 600;
-            color: #3498db;
-        }
-        
-        .sync-status {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-        
-        .status-online {
-            background-color: #2ecc71;
-        }
-        
-        .status-offline {
-            background-color: #e74c3c;
-        }
-
-        .time-info {
-            font-size: 12px;
-            color: #7f8c8d;
-            margin-top: 3px;
-        }
-        
-        /* 微信扫码记录样式 */
-        .wechat-scan-item {
-            padding: 8px 12px;
-            border-bottom: 1px solid #eee;
-            font-size: 13px;
-            background: #f8f9fa;
-            margin-bottom: 5px;
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 15px;
             border-radius: 5px;
-        }
-
-        .wechat-scan-time {
-            color: #7f8c8d;
-            font-size: 11px;
-        }
-
-        .recent-activity {
-            margin-top: 15px;
-        }
-        
-        .work-time-details {
-            display: flex;
-            gap: 15px;
-            margin-top: 5px;
-        }
-        
-        .work-time-item {
-            font-size: 13px;
-            color: #2c3e50;
-        }
-        
-        .work-time-label {
+            cursor: pointer;
+            font-size: 14px;
             font-weight: 600;
-            color: #7f8c8d;
+            transition: background-color 0.3s;
+            margin-left: 10px;
         }
-
-        .realtime-indicator {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: #2ecc71;
-            margin-left: 5px;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.4; }
-            100% { opacity: 1; }
+        button:hover {
+            background-color: #2980b9;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <header><h1>今日用工地点汇总</h1></header>
+        <header>
+            <h1>今日用工地点汇总报表</h1>
+        </header>
         <div class="card">
-            <h2>统计时间：<span id="reportDate"></span> <button onclick="fetchReport()">刷新</button></h2>
+            <h2>统计时间：<span id="reportDate">加载中...</span> 
+                <button onclick="fetchReport()">刷新报表</button>
+            </h2>
             <div id="reportContainer">
                 <div class="empty-state">正在加载或暂无今日用工记录...</div>
             </div>
@@ -465,55 +83,79 @@
     <script>
         // Supabase 配置
         const supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
-        const supabaseKey = '... (你的 Key) ...';
-        const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+        // 使用 work.html 中提供的 Key
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
+        
+        // 【修复 1】将 Supabase 客户端定义为全局变量，等待 SDK 加载
+        let supabase = null; 
 
-        document.addEventListener('DOMContentLoaded', fetchReport);
+        document.addEventListener('DOMContentLoaded', function() {
+            // 【修复 2】在 DOM 加载完成后，再安全地创建 Supabase 客户端
+            try {
+                if (window.supabase) {
+                    supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+                    document.getElementById('reportDate').textContent = new Date().toLocaleDateString('zh-CN');
+                    fetchReport(); // 首次加载数据
+                } else {
+                    document.getElementById('reportContainer').innerHTML = '<div class="empty-state error">错误: Supabase SDK 未加载。请检查网络。</div>';
+                }
+            } catch(e) {
+                 document.getElementById('reportContainer').innerHTML = '<div class="empty-state error">初始化错误: ' + e.message + '</div>';
+            }
+        });
+
 
         async function fetchReport() {
-            document.getElementById('reportDate').textContent = new Date().toLocaleDateString('zh-CN');
-            
-            // 获取今天凌晨的时间作为查询起点
-            const startOfToday = new Date();
-            startOfToday.setHours(0, 0, 0, 0);
-            const todayISO = startOfToday.toISOString();
-
-            // 1. 查询今天的扫码记录
-            const { data: scans, error } = await supabase
-                .from('wechat_scans')
-                .select('employee_id, work_location, work_type')
-                .gte('scan_time', todayISO); // 确保是今天之后的记录
-
-            if (error) {
-                console.error('查询报表数据失败:', error);
-                document.getElementById('reportContainer').innerHTML = '<div class="empty-state error">查询数据失败: ' + error.message + '</div>';
+            if (!supabase) {
+                // 如果在初始化前被点击，防止 ReferenceError
+                document.getElementById('reportContainer').innerHTML = '<div class="empty-state">正在初始化连接，请稍候再试...</div>';
                 return;
             }
+            
+            document.getElementById('reportContainer').innerHTML = '<div class="empty-state">正在查询数据...</div>';
 
-            // 2. 数据聚合
-            const locationReport = {}; // 存储 {location: {employees: Set(), workTypes: Set()}}
+            try {
+                // 获取今天凌晨的时间作为查询起点
+                const startOfToday = new Date();
+                startOfToday.setHours(0, 0, 0, 0);
+                const todayISO = startOfToday.toISOString();
 
-            scans.forEach(scan => {
-                const loc = scan.work_location || '（未填写地点）';
-                const type = scan.work_type || '（未填写工种）';
+                // 1. 查询今天的扫码记录 (需要 work_location 和 work_type 字段已存在于 wechat_scans 表中)
+                const { data: scans, error } = await supabase
+                    .from('wechat_scans')
+                    .select('employee_id, work_location, work_type')
+                    .gte('scan_time', todayISO); 
 
-                if (!locationReport[loc]) {
-                    locationReport[loc] = {
-                        employees: new Set(),
-                        workTypes: new Set()
-                    };
+                if (error) {
+                    throw new Error(error.message);
                 }
-                
-                // 仅统计上工/登录记录（由于工时记录是上下工交替，最简单的办法是只统计第一次扫码，即工时记录中没有 start_time 或 is_working: false 的扫码）
-                // 考虑到我们无法在 report 页面直接访问 work_records 状态，这里采取简单聚合：
-                // 只要今天扫码记录里有 location/type，就进行统计。
-                
-                locationReport[loc].employees.add(scan.employee_id);
-                locationReport[loc].workTypes.add(type);
-            });
 
-            // 3. 渲染报表
-            renderReportTable(locationReport);
+                // 2. 数据聚合
+                const locationReport = {}; // 存储 {location: {employees: Set(), workTypes: Set()}}
+
+                scans.forEach(scan => {
+                    // 确保地点和工种字段存在，否则使用占位符
+                    const loc = scan.work_location || '（未填写地点）';
+                    const type = scan.work_type || '（未填写工种）';
+
+                    if (!locationReport[loc]) {
+                        locationReport[loc] = {
+                            employees: new Set(),
+                            workTypes: new Set()
+                        };
+                    }
+                    
+                    // 统计去重后的员工和工种
+                    locationReport[loc].employees.add(scan.employee_id);
+                    locationReport[loc].workTypes.add(type);
+                });
+
+                // 3. 渲染报表
+                renderReportTable(locationReport);
+            } catch (error) {
+                console.error('查询报表数据失败:', error);
+                document.getElementById('reportContainer').innerHTML = '<div class="empty-state error" style="color: #e74c3c;">查询数据失败: ' + error.message + '</div>';
+            }
         }
 
         function renderReportTable(reportData) {
