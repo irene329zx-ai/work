@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>用工地点统计报表</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <style> 
         * {
             box-sizing: border-box;
@@ -63,12 +64,20 @@
         button:hover {
             background-color: #2980b9;
         }
-        /* 新增：滚动条样式，用于容纳更多工种列 */
+        /* 新增导出按钮样式 */
+        #exportButton {
+            background-color: #2ecc71;
+        }
+        #exportButton:hover {
+            background-color: #27ae60;
+        }
+
         .report-table-wrapper {
             overflow-x: auto;
+            margin-top: 20px;
         }
         table {
-            min-width: 800px; /* 确保表格不会被压缩太小 */
+            min-width: 800px; 
         }
     </style>
 </head>
@@ -79,13 +88,17 @@
         </header>
         <div class="card">
             <h2>
-                请选择统计日期：
-                <input type="date" id="reportDateInput" required style="padding: 8px; border-radius: 5px; border: 1px solid #ddd; font-size: 14px; margin-right: 10px;">
-                <button onclick="fetchReport()">查询报表</button>
+                请选择统计**月份**：
+                <input type="month" id="reportMonthInput" required style="padding: 8px; border-radius: 5px; border: 1px solid #ddd; font-size: 14px; margin-right: 10px;">
+                <button onclick="fetchAndDisplayReport()">查询报表</button>
             </h2>
             
+            <div id="exportContainer" style="margin-top: 20px; text-align: right;">
+                <button id="exportButton" onclick="exportMonthlyReport()">导出本月用工明细 (Excel)</button>
+            </div>
+            
             <div id="reportContainer">
-                <div class="empty-state">请选择日期并点击查询...</div>
+                <div class="empty-state">请选择月份并点击查询...</div>
             </div>
         </div>
     </div>
@@ -96,15 +109,18 @@
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlua21sYmN6a2Nwb3JqZHBhd2JyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDcwMjUsImV4cCI6MjA3ODQyMzAyNX0.6tkS9oBrg3_1tGzSXQZygZv_KpC-x97B_1r39lgBTGY';
         
         let supabase = null; 
+        let cachedScans = []; // 缓存当前查询月的所有扫码记录，用于导出
 
         document.addEventListener('DOMContentLoaded', function() {
             try {
                 if (window.supabase) {
                     supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
-                    // 设置默认日期为今天
+                    // 设置默认日期为本月
                     const today = new Date();
-                    document.getElementById('reportDateInput').valueAsDate = today;
-                    fetchReport(); // 首次加载数据
+                    const year = today.getFullYear();
+                    const month = String(today.getMonth() + 1).padStart(2, '0');
+                    document.getElementById('reportMonthInput').value = `${year}-${month}`;
+                    fetchAndDisplayReport(); // 首次加载数据
                 } else {
                     document.getElementById('reportContainer').innerHTML = '<div class="empty-state error">错误: Supabase SDK 未加载。请检查网络。</div>';
                 }
@@ -113,82 +129,101 @@
             }
         });
 
+        // 辅助函数：将 ISO 时间戳格式化为本地日期
+        function formatLocalDay(isoString) {
+            const date = new Date(isoString);
+            return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+        }
+        
+        // 辅助函数：将 ISO 时间戳格式化为本地时间
+        function formatLocalTime(isoString) {
+            const date = new Date(isoString);
+            return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+        }
 
-        async function fetchReport() {
+        // ===============================================
+        // 核心功能 1: 查询和显示报表 (按月汇总工种人数)
+        // ===============================================
+        async function fetchAndDisplayReport() {
             if (!supabase) {
                 document.getElementById('reportContainer').innerHTML = '<div class="empty-state">正在初始化连接，请稍候再试...</div>';
                 return;
             }
             
-            const dateInput = document.getElementById('reportDateInput').value;
-            if (!dateInput) {
-                alert('请选择查询日期');
+            const monthInput = document.getElementById('reportMonthInput').value;
+            if (!monthInput) {
+                alert('请选择查询月份');
                 return;
             }
             
             document.getElementById('reportContainer').innerHTML = '<div class="empty-state">正在查询数据...</div>';
 
             try {
-                // 获取选定日期的开始时间
-                const selectedDate = new Date(dateInput);
-                selectedDate.setHours(0, 0, 0, 0); 
-                const startOfDay = selectedDate.toISOString();
+                const [year, month] = monthInput.split('-').map(Number);
+                
+                // 获取选定月份的开始时间
+                const startOfMonth = new Date(year, month - 1, 1).toISOString();
+                // 获取下一个月的开始时间（用于限定查询范围）
+                const endOfMonth = new Date(year, month, 1).toISOString();
 
-                // 获取第二天的开始时间（用于限定查询范围）
-                const endOfDay = new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000).toISOString();
-
-                // 1. 查询选定日期的扫码记录
+                // 1. 查询选定月份的扫码记录
                 const { data: scans, error } = await supabase
                     .from('wechat_scans')
-                    .select('employee_id, work_location, work_type')
-                    .gte('scan_time', startOfDay) // 大于等于选定日期的 00:00:00
-                    .lt('scan_time', endOfDay);   // 小于第二天的 00:00:00
+                    .select('employee_id, work_location, work_type, scan_time')
+                    .gte('scan_time', startOfMonth) 
+                    .lt('scan_time', endOfMonth);   
 
                 if (error) {
                     throw new Error(error.message);
                 }
-
-                // 2. 数据聚合 (修改为按工种分类统计人数)
-                const locationReport = {}; 
-
-                scans.forEach(scan => {
-                    const loc = scan.work_location || '（未填写地点）';
-                    const type = scan.work_type || '（未填写工种）';
-
-                    if (!locationReport[loc]) {
-                        locationReport[loc] = {
-                            employees: new Set(),         // 统计总人数（去重）
-                            workTypesCount: {},           // 核心：存储 {type: count}
-                            employeeWorkTypeKey: new Set() // 辅助：存储 'employeeId-workType' 键用于去重统计工种人数
-                        };
-                    }
-                    
-                    // 统计去重后的员工总人数（只要扫码就算一个人）
-                    locationReport[loc].employees.add(scan.employee_id);
-                    
-                    // 统计工种人数：按 'employee_id' + 'work_type' 组合去重
-                    const key = `${scan.employee_id}-${type}`;
-                    if (!locationReport[loc].employeeWorkTypeKey.has(key)) {
-                        locationReport[loc].workTypesCount[type] = (locationReport[loc].workTypesCount[type] || 0) + 1;
-                        locationReport[loc].employeeWorkTypeKey.add(key);
-                    }
-                });
+                
+                cachedScans = scans || []; // 缓存结果用于导出
+                
+                // 2. 数据聚合 (按地点+工种分类统计人数)
+                const locationReport = aggregateDataForDisplay(cachedScans);
 
                 // 3. 渲染报表
-                renderReportTable(locationReport);
+                renderReportTable(locationReport, monthInput);
             } catch (error) {
                 console.error('查询报表数据失败:', error);
                 document.getElementById('reportContainer').innerHTML = '<div class="empty-state error" style="color: #e74c3c;">查询数据失败: ' + error.message + '</div>';
             }
         }
+        
+        function aggregateDataForDisplay(scans) {
+             const locationReport = {}; 
+             scans.forEach(scan => {
+                 const loc = scan.work_location || '（未填写地点）';
+                 const type = scan.work_type || '（未填写工种）';
 
-        function renderReportTable(reportData) {
+                 if (!locationReport[loc]) {
+                     locationReport[loc] = {
+                         employees: new Set(),         
+                         workTypesCount: {},           
+                         employeeWorkTypeKey: new Set()
+                     };
+                 }
+                 
+                 // 统计去重后的员工总人数
+                 locationReport[loc].employees.add(scan.employee_id);
+                 
+                 // 统计工种人数：按 'employee_id' + 'work_type' 组合去重
+                 const key = `${scan.employee_id}-${type}`;
+                 if (!locationReport[loc].employeeWorkTypeKey.has(key)) {
+                     locationReport[loc].workTypesCount[type] = (locationReport[loc].workTypesCount[type] || 0) + 1;
+                     locationReport[loc].employeeWorkTypeKey.add(key);
+                 }
+             });
+             return locationReport;
+        }
+
+
+        function renderReportTable(reportData, monthInput) {
             const container = document.getElementById('reportContainer');
             const locations = Object.keys(reportData).sort();
-            const selectedDate = document.getElementById('reportDateInput').value;
 
             if (locations.length === 0) {
-                container.innerHTML = `<div class="empty-state">${selectedDate} 暂无用工记录。</div>`;
+                container.innerHTML = `<div class="empty-state">${monthInput} 暂无用工记录。</div>`;
                 return;
             }
 
@@ -202,7 +237,7 @@
             const sortedWorkTypes = Array.from(allWorkTypes).sort();
 
             let tableHTML = `
-                <h3 style="margin-bottom: 15px;">用工统计 (${selectedDate})</h3>
+                <h3 style="margin-bottom: 15px;">${monthInput} 用工统计</h3>
                 <div class="report-table-wrapper">
                 <table style="width: 100%; border-collapse: collapse; text-align: left;">
                     <thead>
@@ -213,7 +248,7 @@
 
             // 2. 动态添加工种列头
             sortedWorkTypes.forEach(type => {
-                tableHTML += `<th style="padding: 10px; border: 1px solid #ddd; width: 80px; text-align: right; white-space: nowrap;">${type}</th>`;
+                tableHTML += `<th style="padding: 10px; border: 1px solid #ddd; width: 80px; text-align: right; white-space: nowrap;" title="按地点+员工+工种去重">${type}</th>`;
             });
 
             tableHTML += `
@@ -254,6 +289,50 @@
             `;
 
             container.innerHTML = tableHTML;
+        }
+        
+        // ===============================================
+        // 核心功能 2: 导出 Excel (用工明细)
+        // ===============================================
+
+        async function exportMonthlyReport() {
+            if (cachedScans.length === 0) {
+                alert('当前月份没有用工记录可供导出。请先查询。');
+                return;
+            }
+
+            const monthInput = document.getElementById('reportMonthInput').value;
+            
+            // 1. 准备导出数据
+            const exportData = cachedScans.map(scan => {
+                return {
+                    '日期': formatLocalDay(scan.scan_time),
+                    '时间': formatLocalTime(scan.scan_time),
+                    '工号': scan.employee_id,
+                    '用工地点': scan.work_location || 'N/A',
+                    '工种': scan.work_type || 'N/A',
+                    '操作类型': getActionType(scan), // 扫码记录通常只代表一个事件，需要判断上工/下工
+                    '扫描者工号': scan.scanner_id || 'N/A'
+                };
+            });
+            
+            // 辅助函数：根据扫码时间判断操作类型（简易判断，需结合 work_records 才能准确判断是上工还是下工）
+            // 由于这里只有原始扫码记录，我们统一标记为 "考勤记录"
+            function getActionType(scan) {
+                // 实际在 scan-success.html 中，每一次扫码都会触发上工或下工
+                // 由于我们无法直接在 wechat_scans 表判断，这里提供一个提示
+                return '考勤记录 (上工或下工)'; 
+            }
+            
+            // 2. 将 JSON 数据转换为工作表
+            const ws = XLSX.utils.json_to_sheet(exportData);
+
+            // 3. 创建工作簿
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "用工地点考勤明细");
+
+            // 4. 导出文件
+            XLSX.writeFile(wb, `用工地点考勤明细_${monthInput}.xlsx`);
         }
     </script>
 </body>
