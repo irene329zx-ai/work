@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>用工地点统计报表</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style> /* ... 样式从 work.html 复制过来 ... */ </style>
+</head>
+<body>
+    <div class="container">
+        <header><h1>今日用工地点汇总</h1></header>
+        <div class="card">
+            <h2>统计时间：<span id="reportDate"></span> <button onclick="fetchReport()">刷新</button></h2>
+            <div id="reportContainer">
+                <div class="empty-state">正在加载或暂无今日用工记录...</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Supabase 配置
+        const supabaseUrl = 'https://ynkmlbczkcporjdpawbr.supabase.co';
+        const supabaseKey = '... (你的 Key) ...';
+        const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+        document.addEventListener('DOMContentLoaded', fetchReport);
+
+        async function fetchReport() {
+            document.getElementById('reportDate').textContent = new Date().toLocaleDateString('zh-CN');
+            
+            // 获取今天凌晨的时间作为查询起点
+            const startOfToday = new Date();
+            startOfToday.setHours(0, 0, 0, 0);
+            const todayISO = startOfToday.toISOString();
+
+            // 1. 查询今天的扫码记录
+            const { data: scans, error } = await supabase
+                .from('wechat_scans')
+                .select('employee_id, work_location, work_type')
+                .gte('scan_time', todayISO); // 确保是今天之后的记录
+
+            if (error) {
+                console.error('查询报表数据失败:', error);
+                document.getElementById('reportContainer').innerHTML = '<div class="empty-state error">查询数据失败: ' + error.message + '</div>';
+                return;
+            }
+
+            // 2. 数据聚合
+            const locationReport = {}; // 存储 {location: {employees: Set(), workTypes: Set()}}
+
+            scans.forEach(scan => {
+                const loc = scan.work_location || '（未填写地点）';
+                const type = scan.work_type || '（未填写工种）';
+
+                if (!locationReport[loc]) {
+                    locationReport[loc] = {
+                        employees: new Set(),
+                        workTypes: new Set()
+                    };
+                }
+                
+                // 仅统计上工/登录记录（由于工时记录是上下工交替，最简单的办法是只统计第一次扫码，即工时记录中没有 start_time 或 is_working: false 的扫码）
+                // 考虑到我们无法在 report 页面直接访问 work_records 状态，这里采取简单聚合：
+                // 只要今天扫码记录里有 location/type，就进行统计。
+                
+                locationReport[loc].employees.add(scan.employee_id);
+                locationReport[loc].workTypes.add(type);
+            });
+
+            // 3. 渲染报表
+            renderReportTable(locationReport);
+        }
+
+        function renderReportTable(reportData) {
+            const container = document.getElementById('reportContainer');
+            const locations = Object.keys(reportData).sort();
+
+            if (locations.length === 0) {
+                container.innerHTML = '<div class="empty-state">今日暂无用工记录。</div>';
+                return;
+            }
+
+            let tableHTML = `
+                <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead>
+                        <tr style="background: #f0f0f0;">
+                            <th style="padding: 10px; border: 1px solid #ddd;">用工地点</th>
+                            <th style="padding: 10px; border: 1px solid #ddd; width: 150px; text-align: right;">总人数 (去重)</th>
+                            <th style="padding: 10px; border: 1px solid #ddd; width: 150px; text-align: right;">包含工种数</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            locations.forEach(loc => {
+                const data = reportData[loc];
+                const totalEmployees = data.employees.size;
+                const totalWorkTypes = data.workTypes.size;
+                const workTypesList = Array.from(data.workTypes).join(', '); // 显示工种列表
+
+                tableHTML += `
+                    <tr>
+                        <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; color: #3498db;">${loc}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${totalEmployees} 人</td>
+                        <td style="padding: 10px; border: 1px solid #ddd; text-align: right;" title="${workTypesList}">${totalWorkTypes} 种</td>
+                    </tr>
+                `;
+            });
+            
+            tableHTML += `
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = tableHTML;
+        }
+    </script>
+</body>
+</html>
