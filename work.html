@@ -193,6 +193,13 @@
             align-items: center;
             padding: 15px;
             border-bottom: 1px solid #eee;
+            margin-bottom: 10px; /* 增加行间距 */
+            border-radius: 5px;
+            transition: background-color 0.2s;
+        }
+        
+        .employee-item:hover {
+             background-color: #f8f9fa;
         }
         
         .employee-item:last-child {
@@ -315,6 +322,7 @@
             border-radius: 4px;
             cursor: pointer;
             font-size: 12px;
+            min-width: 55px; /* 统一按钮宽度 */
         }
         
         .delete-btn:hover {
@@ -451,6 +459,93 @@
             0% { opacity: 1; }
             50% { opacity: 0.4; }
             100% { opacity: 1; }
+        }
+
+        /* ------------------------------------- */
+        /* 新增：员工列表优化和模态窗口 (Modal) 样式 */
+        /* ------------------------------------- */
+        
+        /* 模态窗口 (Modal) 样式 */
+        .modal {
+            display: none; 
+            position: fixed; 
+            z-index: 1001; 
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4); 
+            padding-top: 60px;
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto; /* 5% from the top and centered */
+            padding: 30px;
+            border-radius: 10px;
+            border: 1px solid #888;
+            width: 80%; 
+            max-width: 400px;
+            position: relative;
+            text-align: center;
+        }
+
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close-button:hover,
+        .close-button:focus {
+            color: #333;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        
+        .qr-container-modal {
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px dashed #ddd;
+            border-radius: 5px;
+            min-height: 200px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        /* 优化员工列表样式 */
+        .employee-item[data-role="engineer"] {
+            background-color: #f0f4ff; /* 工程师使用浅蓝色背景 */
+            border-left: 5px solid #3498db;
+        }
+        
+        .employee-item[data-role="worker"] {
+            background-color: #f7fff7;
+            border-left: 5px solid #2ecc71;
+        }
+        
+        .employee-item:not([data-role="engineer"]) {
+             margin-bottom: 5px; /* 工人和工程师之间拉开距离 */
+        }
+        
+        .employee-name::before {
+             margin-right: 8px;
+             font-size: 18px;
+             /* 确保字体支持 emoji 或其他符号 */
+        }
+        
+        .employee-item[data-role="worker"] .employee-name::before {
+             content: '👷'; /* 工人图标 */
+        }
+        
+        .employee-item[data-role="engineer"] .employee-name::before {
+             content: '👨‍💻'; /* 工程师图标 */
         }
     </style>
 </head>
@@ -629,6 +724,18 @@
     </div>
     
     <div class="notification" id="notification"></div>
+    
+    <div id="qrModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" onclick="closeModal()">&times;</span>
+            <h2 id="modalTitle"></h2>
+            <div id="modalQrContainer" class="qr-container-modal">
+                <p id="modalQrPlaceholder">正在生成二维码...</p>
+                <canvas id="modalQrcode"></canvas>
+            </div>
+            <p id="modalQrLink" style="font-size: 12px; margin-top: 10px; word-break: break-all; color: #7f8c8d;"></p>
+        </div>
+    </div>
 
     <script>
         // Supabase云同步类 - 增强版（支持双向同步）
@@ -1073,7 +1180,7 @@
                 try {
                     const localEmployees = JSON.parse(localStorage.getItem('employees')) || [];
                     
-                    // 确保上传的数据结构只包含 'id' 和 'name'
+                    // 确保上传的数据结构只包含 'id' and 'name'
                     const employeesToUpload = localEmployees.map(emp => ({
                         id: emp.id,
                         name: emp.name,
@@ -1491,7 +1598,7 @@
             toggleRealtimeBtn.addEventListener('click', async () => {
                 if (cloudSync.isRealtimeEnabled) {
                     cloudSync.disableRealtimeSync();
-                    toggleRealtimeBtn.textContent = '关闭实时同步';
+                    toggleRealtimeBtn.textContent = '开启实时同步';
                 } else {
                     const success = await cloudSync.enableRealtimeSync();
                     if (success) {
@@ -1760,11 +1867,39 @@
             showNotification('表单已清空', 'success');
         }
         
-        // 渲染员工列表 (已增强，包含工程师列表)
+        // 绑定删除按钮和新增的显示二维码按钮的事件
+        function bindListEvents() {
+            // **添加工人删除按钮事件**
+            document.querySelectorAll('.delete-worker-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const employeeId = this.getAttribute('data-id');
+                    deleteEmployee(employeeId);
+                });
+            });
+            
+            // **添加工程师删除按钮事件 (新增)**
+            document.querySelectorAll('.delete-engineer-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const engineerId = this.getAttribute('data-id');
+                    deleteEngineer(engineerId); // 调用新的删除函数
+                });
+            });
+            
+            // **新增：显示二维码按钮事件**
+            document.querySelectorAll('.show-qr-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const id = this.getAttribute('data-id');
+                    const role = this.getAttribute('data-role');
+                    showQRCodeModal(id, role);
+                });
+            });
+        }
+        
+        // 渲染员工列表 (已增强，包含工程师列表和二维码按钮)
         function renderEmployeeList() {
             employeeList.innerHTML = '';
             
-            // 渲染工人列表
+            // 组合工人列表
             const workerListHtml = employees.map(employee => {
                 const isWorking = workRecords[employee.id] && workRecords[employee.id].isWorking;
                 const statusClass = isWorking ? 'status-working' : 'status-idle';
@@ -1788,13 +1923,14 @@
                         </div>
                         <div class="employee-actions">
                             <div class="employee-status ${statusClass}">${statusText}</div>
+                            <button class="delete-btn show-qr-btn" data-id="${employee.id}" data-role="worker" style="background-color: #f39c12; min-width: 55px;">二维码</button>
                             <button class="delete-btn delete-worker-btn" data-id="${employee.id}">删除</button>
                         </div>
                     </div>
                 `;
             }).join('');
 
-            // 渲染工程师列表 (新的部分)
+            // 组合工程师列表
             const engineerListHtml = engineers.map(engineer => {
                 return `
                     <div class="employee-item" data-role="engineer" data-id="${engineer.id}">
@@ -1804,6 +1940,7 @@
                         </div>
                         <div class="employee-actions">
                             <div class="employee-status status-online">身份码</div>
+                            <button class="delete-btn show-qr-btn" data-id="${engineer.id}" data-role="engineer" style="background-color: #f39c12; min-width: 55px;">二维码</button>
                             <button class="delete-btn delete-engineer-btn" data-id="${engineer.id}">删除</button>
                         </div>
                     </div>
@@ -1814,8 +1951,9 @@
             if (employees.length === 0 && engineers.length === 0) {
                 employeeList.innerHTML = '<div class="empty-state">暂无人员信息</div>';
             } else {
-                employeeList.innerHTML = workerListHtml + (engineers.length > 0 ? 
-                    `<h3 style="margin-top: 20px; padding-bottom: 10px; border-bottom: 1px solid #ddd; color: #2c3e50;">工程师列表</h3>` + engineerListHtml : '');
+                 // 重新渲染整个列表
+                 employeeList.innerHTML = workerListHtml + (engineers.length > 0 ? 
+                    `<h3 style="margin-top: 20px; padding-bottom: 10px; border-bottom: 1px solid #ddd; color: #2c3e50;">工程师/扫描者</h3>` + engineerListHtml : '');
             }
             
             // 更新统计
@@ -1828,21 +1966,8 @@
             // 更新工时排行
             updateWorkRanking();
             
-            // **添加工人删除按钮事件**
-            document.querySelectorAll('.delete-worker-btn').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    const employeeId = this.getAttribute('data-id');
-                    deleteEmployee(employeeId);
-                });
-            });
-            
-            // **添加工程师删除按钮事件 (新增)**
-            document.querySelectorAll('.delete-engineer-btn').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    const engineerId = this.getAttribute('data-id');
-                    deleteEngineer(engineerId); // 调用新的删除函数
-                });
-            });
+            // 绑定事件
+            bindListEvents();
         }
         
         // 计算员工今日工时
@@ -2253,6 +2378,78 @@
             setTimeout(() => {
                 notification.classList.remove('show');
             }, 3000);
+        }
+
+        // ==================== 二维码模态窗口功能 ====================
+
+        // **新增：显示二维码模态窗口**
+        function showQRCodeModal(id, role) {
+            const modal = document.getElementById('qrModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalQrContainer = document.getElementById('modalQrcode');
+            const modalQrPlaceholder = document.getElementById('modalQrPlaceholder');
+            const modalQrLink = document.getElementById('modalQrLink');
+            
+            const employee = employees.find(e => e.id === id);
+            const engineer = engineers.find(e => e.id === id);
+            const name = (employee || engineer)?.name || 'N/A';
+            
+            let qrDataUrl = '';
+            const path = `https://irene329zx-ai.github.io/work`;
+
+            if (role === 'worker') {
+                modalTitle.textContent = `工人考勤码: ${name} (${id})`;
+                qrDataUrl = `${path}/scan-success.html?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}`;
+            } else if (role === 'engineer') {
+                modalTitle.textContent = `工程师身份码: ${name} (${id})`;
+                qrDataUrl = `${path}/scanner-session.html?id=${encodeURIComponent(id)}`;
+            }
+            
+            modalQrContainer.innerHTML = '';
+            modalQrPlaceholder.style.display = 'none';
+            modalQrLink.textContent = `链接: ${qrDataUrl}`;
+            
+            // 检查 canvas 元素是否存在并是 Canvas
+            if (modalQrContainer.getContext) {
+                 // 使用原生的 canvas 元素
+                 QRCode.toCanvas(modalQrContainer, qrDataUrl, {
+                    width: 200,
+                    margin: 1,
+                    color: {
+                        dark: '#000000',
+                        light: '#FFFFFF'
+                    }
+                }, function(error) {
+                    if (error) {
+                        console.error(error);
+                        modalQrPlaceholder.style.display = 'block';
+                        modalQrPlaceholder.textContent = '生成二维码失败';
+                    } else {
+                        modal.style.display = 'block';
+                    }
+                });
+            } else {
+                 // 如果不是 Canvas 元素，可能被之前的渲染覆盖了，重新创建
+                 const canvas = document.createElement('canvas');
+                 canvas.id = 'modalQrcode';
+                 document.getElementById('modalQrContainer').innerHTML = '';
+                 document.getElementById('modalQrContainer').appendChild(canvas);
+                 showQRCodeModal(id, role); // 重新调用
+                 return;
+            }
+        }
+        
+        // **新增：关闭模态窗口**
+        function closeModal() {
+            document.getElementById('qrModal').style.display = 'none';
+        }
+
+        // 点击模态窗口外部关闭
+        window.onclick = function(event) {
+            const modal = document.getElementById('qrModal');
+            if (event.target === modal) {
+                closeModal();
+            }
         }
 
         // ==================== 微信扫码相关功能 ====================
